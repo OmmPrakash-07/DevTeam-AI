@@ -34,5 +34,7 @@ def generate_project(request: dict):
     return {
     "user_request": result.get("user_request"),
     "requirements": result.get("requirements", []),
-    "architecture": result.get("architecture", {})
-}
+    "architecture": result.get("architecture", {}),
+    "generated_files": result.get("generated_files", []),
+    "tasks": result.get("tasks", [])
+    }
