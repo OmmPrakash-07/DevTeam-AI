@@ -1,10 +1,9 @@
-from services.llm import get_llm
+from services.llm import invoke_llm
 from graph.state import ProjectState
 
 
 def project_manager_agent(state: ProjectState) -> ProjectState:
 
-    llm = get_llm()
 
     prompt = f"""
 You are the Project Manager Agent of an autonomous
@@ -20,7 +19,7 @@ Extract the main software requirements.
 Return ONLY a numbered list of concise requirements.
 """
 
-    response = llm.invoke(prompt)
+    response = invoke_llm(prompt)
 
     # Gemini may return content as a list of content blocks.
     if isinstance(response.content, list):

@@ -19,3 +19,5 @@ class ProjectState(TypedDict, total=False):
     review: Dict[str, Any]
 
     final_response: str
+
+    debug_attempts: int
