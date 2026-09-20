@@ -1,65 +1,73 @@
+from pathlib import Path
 import json
 
-from services.llm import invoke_llm
 from graph.state import ProjectState
-from tools.filesystem import create_project_files
+from services.llm import invoke_llm
+from tools.filesystem import get_project_dir
 
 
 def clean_json_response(content: str) -> str:
+    """
+    Remove markdown code fences from LLM response.
+    """
 
     content = content.strip()
 
     if content.startswith("```json"):
-
-        content = content[
-            len("```json"):
-        ].strip()
+        content = content[7:]
 
     elif content.startswith("```"):
-
-        content = content[
-            len("```"):
-        ].strip()
+        content = content[3:]
 
     if content.endswith("```"):
+        content = content[:-3]
 
-        content = content[:-3].strip()
-
-    return content
+    return content.strip()
 
 
-def normalize_path(path: str) -> str:
+def normalize_path(file_path: str) -> str:
+    """
+    Normalize generated file paths.
+    """
 
-    path = str(path).replace(
-        "\\",
-        "/"
+    file_path = file_path.replace("\\", "/")
+
+    if file_path.startswith("generated_project/"):
+        file_path = file_path[len("generated_project/"):]
+
+    return file_path
+
+
+def debugger_agent(state: ProjectState):
+
+    project_id = state.get("project_id")
+
+    if not project_id:
+        error = "Project ID is missing from project state."
+
+        return {
+            **state,
+            "errors": [
+                *state.get("errors", []),
+                error
+            ]
+        }
+
+    project_dir = get_project_dir(project_id)
+
+    user_request = state.get(
+        "user_request",
+        ""
     )
 
-    if path.startswith(
-        "generated_project/"
-    ):
-
-        path = path[
-            len("generated_project/"):
-        ]
-
-    return path
-
-
-def debugger_agent(
-    state: ProjectState
-) -> ProjectState:
-
-    debug_attempts = (
-        state.get(
-            "debug_attempts",
-            0
-        ) + 1
-    )
-
-    errors = state.get(
-        "errors",
+    requirements = state.get(
+        "requirements",
         []
+    )
+
+    architecture = state.get(
+        "architecture",
+        {}
     )
 
     tasks = state.get(
@@ -67,282 +75,277 @@ def debugger_agent(
         []
     )
 
-    if not errors:
+    test_results = state.get(
+        "test_results",
+        {}
+    )
+
+    previous_errors = state.get(
+        "errors",
+        []
+    )
+
+    debug_attempts = state.get(
+        "debug_attempts",
+        0
+    )
+
+    debug_attempts += 1
+
+    # Prevent infinite debugging loops.
+    if debug_attempts > 3:
 
         return {
             **state,
             "debug_attempts": debug_attempts
         }
 
-    error_text = "\n".join(
-        f"- {error}"
-        for error in errors
-    )
-
-    files = json.dumps(
-        tasks,
-        indent=2
-    )
-
-    user_request = state.get(
-        "user_request",
-        ""
-    )
-
-    requirements = "\n".join(
-        f"- {req}"
-        for req in state.get(
-            "requirements",
-            []
-        )
-    )
-
     prompt = f"""
-You are the Debugger Agent.
+You are the Debugger Agent in an autonomous software development team.
+
+Your job is to analyze test failures and provide minimal, correct fixes.
 
 USER REQUEST:
 {user_request}
 
-PROJECT REQUIREMENTS:
-{requirements}
+REQUIREMENTS:
+{json.dumps(requirements, indent=2)}
 
-TEST ERRORS:
-{error_text}
+ARCHITECTURE:
+{json.dumps(architecture, indent=2)}
 
-CURRENT GENERATED FILES:
-{files}
+CURRENT TASKS:
+{json.dumps(tasks, indent=2)}
+
+TEST RESULTS:
+{json.dumps(test_results, indent=2)}
+
+CURRENT ERRORS:
+{json.dumps(previous_errors, indent=2)}
 
 DEBUG ATTEMPT:
 {debug_attempts}
 
-Fix the actual errors without changing the
-project requirements or inventing new requirements.
+PROJECT ID:
+{project_id}
 
-Return ONLY valid JSON:
+PROJECT DIRECTORY:
+{project_dir}
+
+IMPORTANT RULES:
+
+1. Fix the actual reported problem.
+2. Do not invent new requirements.
+3. Do not add unnecessary features.
+4. Do not introduce unnecessary dependencies.
+5. Prefer Python standard library.
+6. Tests should use unittest unless pytest is explicitly required.
+7. Do not import pytest unless the project explicitly requires it.
+8. Keep the existing architecture.
+9. Do not create duplicate files.
+10. Do not use absolute file paths.
+11. Do not include generated_project/ in the path.
+12. Only return files that actually need to be created or modified.
+13. If the generated test itself is incorrect, fix the test.
+14. Make sure imports match the actual project structure.
+15. Keep the fix minimal.
+16. Do not create .env files or secrets.
+17. Do not modify unrelated files.
+
+Return ONLY valid JSON.
+
+Required format:
 
 {{
     "files": [
         {{
-            "path": "relative/file/path",
-            "content": "complete fixed file content"
+            "path": "relative/path/to/file.py",
+            "content": "complete corrected file content"
         }}
     ],
-    "explanation": "short explanation"
+    "explanation": "short explanation of the bug and fix"
 }}
 
-STRICT RULES:
+If no code change is required, return:
 
-1. Fix only the actual reported errors.
-2. Do not invent modules just because a test imports them.
-3. Do not create missing architecture unless the
-   original requirements explicitly require it.
-4. Tests must match the implementation.
-5. If a generated test is incorrect, fix the test.
-6. Do not add pytest if pytest was not required.
-7. Prefer Python unittest.
-8. Do not add external dependencies unnecessarily.
-9. Return complete file contents.
-10. Use relative paths only.
-11. Never use generated_project/ in paths.
-12. Do not generate secrets.
-13. Do not change unrelated files.
-14. Do not use markdown code fences.
-15. Do not add explanations outside JSON.
+{{
+    "files": [],
+    "explanation": "No code changes required."
+}}
 """
-
-    print(
-        "\n========== DEBUGGER AGENT =========="
-    )
 
     try:
 
         response = invoke_llm(prompt)
 
-        if isinstance(
-            response.content,
-            list
-        ):
-
-            content = "\n".join(
-                str(block.get("text", block))
-                if isinstance(block, dict)
-                else str(block)
-                for block in response.content
-            )
-
-        else:
-
-            content = str(
-                response.content
-            )
-
         content = clean_json_response(
-            content
+            response.content
         )
 
-        result = json.loads(
-            content
+        result = json.loads(content)
+
+    except Exception as error:
+
+        debug_error = (
+            f"Debugger LLM error: {error}"
         )
 
-        fixed_files = result.get(
-            "files",
+        return {
+            **state,
+            "debug_attempts": debug_attempts,
+            "errors": [
+                *previous_errors,
+                debug_error
+            ]
+        }
+
+    files = result.get(
+        "files",
+        []
+    )
+
+    if not isinstance(files, list):
+        files = []
+
+    fixed_files = []
+
+    updated_tasks = list(tasks)
+
+    generated_files = list(
+        state.get(
+            "generated_files",
             []
         )
+    )
 
-        explanation = result.get(
-            "explanation",
+    seen_paths = set()
+
+    for file in files:
+
+        if not isinstance(file, dict):
+            continue
+
+        raw_path = file.get(
+            "path"
+        )
+
+        if not raw_path:
+            continue
+
+        relative_path = normalize_path(
+            str(raw_path)
+        )
+
+        if not relative_path:
+            continue
+
+        # Prevent duplicate files.
+        if relative_path in seen_paths:
+            continue
+
+        seen_paths.add(relative_path)
+
+        path = Path(relative_path)
+
+        # Absolute paths are not allowed.
+        if path.is_absolute():
+
+            continue
+
+        target = (
+            project_dir / path
+        ).resolve()
+
+        # Prevent path traversal.
+        try:
+
+            target.relative_to(
+                project_dir.resolve()
+            )
+
+        except ValueError:
+
+            continue
+
+        content = file.get(
+            "content",
             ""
         )
 
         if not isinstance(
-            fixed_files,
-            list
+            content,
+            str
         ):
+            content = str(content)
 
-            raise ValueError(
-                "'files' must be a list."
+        target.parent.mkdir(
+            parents=True,
+            exist_ok=True
+        )
+
+        target.write_text(
+            content,
+            encoding="utf-8"
+        )
+
+        fixed_files.append(
+            relative_path
+        )
+
+        # Update existing task if present.
+        task_found = False
+
+        for task in updated_tasks:
+
+            task_path = normalize_path(
+                str(task.get("path", ""))
             )
 
-    except Exception as error:
+            if task_path == relative_path:
 
-        print(
-            f"❌ Debugger failed: {error}"
-        )
-
-        return {
-            **state,
-            "debug_attempts": debug_attempts,
-            "errors": [
-                f"Debugger failed: {error}"
-            ]
-        }
-
-    normalized_files = []
-
-    for file in fixed_files:
-
-        if not isinstance(
-            file,
-            dict
-        ):
-            continue
-
-        path = file.get(
-            "path"
-        )
-
-        content = file.get(
-            "content"
-        )
-
-        if not path or content is None:
-            continue
-
-        normalized_files.append({
-            "path": normalize_path(path),
-            "content": str(content)
-        })
-
-    if not normalized_files:
-
-        return {
-            **state,
-            "debug_attempts": debug_attempts,
-            "errors": [
-                "Debugger returned no valid files."
-            ]
-        }
-
-    try:
-
-        create_project_files(
-            "generated_project",
-            normalized_files
-        )
-
-    except Exception as error:
-
-        return {
-            **state,
-            "debug_attempts": debug_attempts,
-            "errors": [
-                f"Debugger file write failed: {error}"
-            ]
-        }
-
-    updated_tasks = tasks.copy()
-
-    for fixed_file in normalized_files:
-
-        fixed_path = fixed_file["path"]
-
-        replaced = False
-
-        for index, existing_file in enumerate(
-            updated_tasks
-        ):
-
-            if normalize_path(
-                existing_file.get("path", "")
-            ) == fixed_path:
-
-                updated_tasks[index] = fixed_file
-
-                replaced = True
-
+                task["path"] = relative_path
+                task["content"] = content
+                task_found = True
                 break
 
-        if not replaced:
+        # Add new task only if absolutely necessary.
+        if not task_found:
 
-            updated_tasks.append(
-                fixed_file
-            )
+            updated_tasks.append({
+                "path": relative_path,
+                "content": content
+            })
 
-    generated_files = []
-
-    for task in updated_tasks:
-
-        path = task.get(
-            "path"
-        )
-
-        if not path:
-            continue
-
-        normalized = normalize_path(
-            path
-        )
-
-        full_path = (
-            f"generated_project/{normalized}"
-        )
-
-        if full_path not in generated_files:
+        # Update generated files list.
+        if relative_path not in [
+            normalize_path(str(item))
+            for item in generated_files
+        ]:
 
             generated_files.append(
-                full_path
+                relative_path
             )
-
-    print(
-        f"🔧 Debugger fixed "
-        f"{len(normalized_files)} files."
-    )
-
-    print(
-        f"💡 {explanation}"
-    )
-
-    print(
-        "===================================\n"
-    )
 
     return {
         **state,
+
+        "project_id": project_id,
+
         "tasks": updated_tasks,
+
         "generated_files": generated_files,
-        "errors": [],
+
         "debug_attempts": debug_attempts,
-        "review": {
-            "debugger_explanation": explanation
+
+        "errors": previous_errors,
+
+        "debug_result": {
+            "status": "completed",
+            "attempt": debug_attempts,
+            "fixed_files": fixed_files,
+            "explanation": result.get(
+                "explanation",
+                ""
+            )
         }
     }
