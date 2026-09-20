@@ -4,6 +4,8 @@ from graph.state import ProjectState
 from agents.project_manager import project_manager_agent
 from agents.architect import architect_agent
 from agents.developer import developer_agent
+from agents.filesystem_agent import filesystem_agent
+from agents.tester import tester_agent
 
 
 def create_workflow():
@@ -26,6 +28,16 @@ def create_workflow():
         developer_agent
     )
 
+    graph.add_node(
+        "filesystem",
+        filesystem_agent
+    )
+
+    graph.add_node(
+        "tester",
+        tester_agent
+    )
+
     # Workflow
     graph.add_edge(
         START,
@@ -44,6 +56,16 @@ def create_workflow():
 
     graph.add_edge(
         "developer",
+        "filesystem"
+    )
+
+    graph.add_edge(
+        "filesystem",
+        "tester"
+    )
+
+    graph.add_edge(
+        "tester",
         END
     )
 
