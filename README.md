@@ -1,106 +1,185 @@
-# DevTeam AI 🤖
+# DevTeam AI
 
 > **Multi-Agent Autonomous Software Development Team**
 
-DevTeam AI is an AI-powered software development system designed to take a software idea and process it through multiple specialized development agents.
+DevTeam AI is an AI-powered software development system that uses multiple specialized agents to automate the software development workflow.
 
-The long-term goal is to automate a complete software development workflow:
-
-**Requirements → Architecture → Development → Testing → Debugging → Code Review → Documentation**
+Instead of relying on a single AI agent, DevTeam AI divides the development process into specialized roles such as requirements analysis, architecture design, coding, file generation, testing, debugging, code review, and documentation.
 
 ---
 
-## 🚀 Current Progress
+## Overview
 
-The project is currently in the early backend/workflow development stage.
-
-### Implemented
-
-- ✅ FastAPI backend
-- ✅ Gemini API integration
-- ✅ LangGraph workflow
-- ✅ Shared project state
-- ✅ Project Manager Agent
-- ✅ Architect Agent
-- ✅ Developer Agent
-- ✅ Project Manager → Architect → Developer workflow
-- ✅ `/generate` API endpoint
-- ✅ JSON-based architecture generation
-- ✅ Developer agent source-file planning
-- ✅ Environment variable support using `.env`
-
-### Current Workflow
+DevTeam AI follows an automated development pipeline:
 
 ```text
 User Request
-     │
-     ▼
-Project Manager Agent
-     │
-     ▼
-Architect Agent
-     │
-     ▼
-Developer Agent
-     │
-     ▼
-Generated Project Files
+     |
+     v
+Project Manager
+     |
+     v
+Architect
+     |
+     v
+Developer
+     |
+     v
+File System Agent
+     |
+     v
+Tester
+     |
+     +---- Tests Failed ----> Debugger
+     |                         |
+     |                         v
+     |                       Tester
+     |
+     +---- Tests Passed -----> Code Reviewer
+                                  |
+                                  v
+                            Documentation
+                                  |
+                                  v
+                                 END
 ```
 
----
-
-## 🧠 Agents
-
-### 1. Project Manager Agent
-
-Analyzes the user's software idea and extracts the main software requirements.
-
-**Input:**
-- User's software request
-
-**Output:**
-- List of software requirements
+The workflow is orchestrated using **LangGraph**, while the backend API is built with **FastAPI**.
 
 ---
 
-### 2. Architect Agent
+## Features
 
-Converts the requirements into a technical architecture.
-
-It currently generates information such as:
-
-- Project type
-- Frontend technology
-- Backend technology
-- Database
-- Authentication
-- API style
-- Folder structure
-
-**Output:**
-- Structured architecture in JSON format
-
----
-
-### 3. Developer Agent
-
-Uses the requirements and architecture to design the initial project source files.
-
-It generates:
-
-- File paths
-- Source code
-- Initial project files
-
-**Output:**
-- Generated file list
-- File contents stored in the workflow state
-
-> File writing to the final generated project directory is part of the upcoming development stages.
+- Multi-agent software development workflow
+- Automated requirement analysis
+- AI-generated project architecture
+- Automated source-code generation
+- Automatic project file creation
+- Automated testing
+- Debugging loop for failed tests
+- AI-based code review
+- Automatic documentation generation
+- Multiple LLM provider fallback
+- Path traversal protection for generated files
+- Python AST validation
+- Test execution with timeouts
+- REST API for project generation
 
 ---
 
-## 🛠️ Tech Stack
+## AI Agents
+
+DevTeam AI currently contains **8 specialized agents**.
+
+| Agent             | Responsibility                                                               |
+| ----------------- | ---------------------------------------------------------------------------- |
+| Project Manager   | Converts the user request into structured requirements and development tasks |
+| Architect         | Designs the project architecture and folder structure                        |
+| Developer         | Generates source code, tests, and project documentation                      |
+| File System Agent | Creates the generated project files safely                                   |
+| Tester            | Validates and executes generated tests                                       |
+| Debugger          | Fixes errors detected during testing                                         |
+| Code Reviewer     | Reviews the generated implementation for quality and issues                  |
+| Documentation     | Generates project documentation based on the actual project                  |
+
+---
+
+## Workflow Logic
+
+The current workflow is implemented using LangGraph.
+
+### 1. Project Manager
+
+Receives the user's software request and determines the requirements and tasks.
+
+### 2. Architect
+
+Creates an architecture based on the actual project requirement.
+
+The architecture is not restricted to web applications. Depending on the request, it can describe projects such as:
+
+- Python CLI applications
+- Automation tools
+- Backend/API applications
+- Desktop applications
+- Full-stack applications
+- Other software systems
+
+### 3. Developer
+
+Generates the required project files according to the architecture and requirements.
+
+The developer is instructed to avoid unnecessarily inventing:
+
+- Frameworks
+- Databases
+- APIs
+- Authentication systems
+- Dependencies
+- Modules
+- Classes
+- Services
+
+### 4. File System Agent
+
+Writes the generated files into the project's generated-project directory.
+
+The file system layer also prevents:
+
+- Absolute paths
+- Path traversal
+- Writing files outside the generated project directory
+
+### 5. Tester
+
+The tester performs validation and testing.
+
+For Python projects it can:
+
+- Validate Python syntax using AST
+- Detect problematic imports
+- Execute unit tests
+- Execute suitable non-interactive Python modules
+- Detect test failures
+- Apply execution timeouts
+
+The current default Python test command is:
+
+```bash
+python -m unittest discover -s tests
+```
+
+### 6. Debugger
+
+If tests fail, the debugger receives the relevant project information and attempts to fix the generated files.
+
+The workflow can repeat the:
+
+```text
+Tester -> Debugger -> Tester
+```
+
+cycle.
+
+The current workflow allows up to **3 debugging attempts** before continuing to code review.
+
+### 7. Code Reviewer
+
+After testing succeeds, the generated project is reviewed for:
+
+- Code quality
+- Potential issues
+- Maintainability
+- Implementation consistency
+- Unnecessary complexity
+
+### 8. Documentation Agent
+
+Finally, documentation is generated based on the project and its implementation.
+
+---
+
+## Technology Stack
 
 ### Backend
 
@@ -108,168 +187,195 @@ It generates:
 - FastAPI
 - LangGraph
 - LangChain
-- Google Gemini API
 - python-dotenv
 
-### Frontend
+### AI / LLM Providers
 
-The planned frontend stack is:
+DevTeam AI currently supports a fallback sequence involving:
 
-- React
-- Vite
-- Tailwind CSS
+1. Google Gemini
+2. Groq
+3. DeepSeek
+4. Anthropic Claude
+5. OpenRouter
 
-Frontend implementation is planned for a later stage.
+The system attempts the configured providers in sequence when an earlier provider fails.
 
-### Planned Technologies
+### Project Execution
 
-- PostgreSQL
-- Chroma / FAISS
-- Sandboxed code execution
-- Git / GitHub integration
+- Python subprocess execution
+- Python AST validation
+- `unittest`
+- File-system safety validation
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```text
 devteam-ai/
-│
-├── backend/
-│   │
-│   ├── agents/
-│   │   ├── __init__.py
-│   │   ├── project_manager.py
-│   │   ├── architect.py
-│   │   └── developer.py
-│   │
-│   ├── graph/
-│   │   ├── __init__.py
-│   │   ├── state.py
-│   │   └── workflow.py
-│   │
-│   ├── services/
-│   │   ├── __init__.py
-│   │   └── llm.py
-│   │
-│   ├── tools/
-│   │   ├── __init__.py
-│   │   └── filesystem.py
-│   │
-│   ├── main.py
-│   └── .env
-│
-├── frontend/
-│
-├── generated_projects/
-│
-└── tests/
+|
++-- backend/
+|   |
+|   +-- agents/
+|   |   +-- __init__.py
+|   |   +-- project_manager.py
+|   |   +-- architect.py
+|   |   +-- developer.py
+|   |   +-- filesystem_agent.py
+|   |   +-- tester.py
+|   |   +-- debugger.py
+|   |   +-- code_reviewer.py
+|   |   +-- documentation.py
+|   |
+|   +-- graph/
+|   |   +-- __init__.py
+|   |   +-- state.py
+|   |   +-- workflow.py
+|   |
+|   +-- services/
+|   |   +-- __init__.py
+|   |   +-- llm.py
+|   |
+|   +-- tools/
+|   |   +-- __init__.py
+|   |   +-- filesystem.py
+|   |
+|   +-- main.py
+|   +-- .env
+|
++-- frontend/
+|
++-- generated_projects/
+|
++-- tests/
+|
++-- .gitignore
++-- README.md
 ```
-
-> `backend/.env` is a local configuration file and should **not** be committed to GitHub.
 
 ---
 
-## ⚙️ Installation
+## Requirements
 
-### 1. Clone the repository
+Make sure the following are installed:
+
+- Python 3.10+
+- pip
+- Git
+
+Recommended Python packages:
+
+```bash
+pip install -U langchain-google-genai
+pip install -U langgraph langchain python-dotenv fastapi uvicorn
+pip install -U anthropic openai
+```
+
+---
+
+## Configuration
+
+Create a `.env` file inside the `backend` directory.
+
+```env
+GEMINI_API_KEY=your_gemini_api_key
+GROQ_API_KEY=your_groq_api_key
+DEEPSEEK_API_KEY=your_deepseek_api_key
+ANTHROPIC_API_KEY=your_anthropic_api_key
+OPENROUTER_API_KEY=your_openrouter_api_key
+```
+
+Only configure the providers you intend to use.
+
+### Security
+
+Do not commit API keys to GitHub.
+
+The repository `.gitignore` excludes:
+
+```text
+backend/.env
+.env
+```
+
+---
+
+## Installation
+
+Clone the repository:
 
 ```bash
 git clone https://github.com/OmmPrakash-07/DevTeam-AI.git
 ```
 
-Then:
+Move into the project:
 
 ```bash
 cd DevTeam-AI
 ```
 
+Create a virtual environment:
+
+```bash
+python -m venv backend/venv
+```
+
+Activate it on Windows:
+
+```powershell
+backend\venv\Scripts\Activate.ps1
+```
+
+Install the dependencies:
+
+```bash
+pip install -U langchain-google-genai langgraph langchain python-dotenv fastapi uvicorn anthropic openai
+```
+
 ---
 
-### 2. Open the backend
+## Running the Backend
+
+Move into the backend directory:
 
 ```powershell
 cd backend
 ```
 
----
-
-### 3. Create a Python virtual environment
-
-Windows PowerShell:
-
-```powershell
-python -m venv venv
-```
-
-Activate it:
-
-```powershell
-.env\Scripts\Activate.ps1
-```
-
----
-
-### 4. Install dependencies
-
-```powershell
-pip install -U langchain-google-genai
-pip install -U langgraph langchain python-dotenv fastapi uvicorn
-```
-
----
-
-## 🔑 Environment Variables
-
-Create:
-
-```text
-backend/.env
-```
-
-Add:
-
-```env
-GEMINI_API_KEY=your_api_key_here
-```
-
-Do **not** add your real API key to GitHub.
-
-The project uses `python-dotenv` to load the key from the `.env` file.
-
----
-
-## ▶️ Running the Backend
-
-From the `backend` directory:
+Start FastAPI:
 
 ```powershell
 uvicorn main:app --reload
 ```
 
-The backend should start at:
+The API will normally be available at:
 
 ```text
 http://127.0.0.1:8000
 ```
 
+FastAPI documentation:
+
+```text
+http://127.0.0.1:8000/docs
+```
+
 ---
 
-## 🧪 API
+## API
 
 ### Health Check
 
-Open:
-
-```text
+```http
 GET /
 ```
 
-Expected response:
+Example response:
 
 ```json
 {
-  "message": "DevTeam AI is running 🚀"
+  "message": "DevTeam AI is running"
 }
 ```
 
@@ -277,257 +383,270 @@ Expected response:
 
 ### Generate Project
 
-Endpoint:
-
-```text
+```http
 POST /generate
 ```
 
-Example request:
+Request:
 
 ```json
 {
-  "request": "Build a bike rental web application"
+  "request": "Create a simple Python calculator application"
 }
 ```
 
-The workflow processes the request through:
+Example PowerShell request:
 
-```text
-Project Manager
-       ↓
-    Architect
-       ↓
-    Developer
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/generate" `
+  -Method Post `
+  -ContentType "application/json" `
+  -Body '{"request":"Create a simple Python calculator application"}'
 ```
 
-The response currently contains:
+The response contains information such as:
 
 - User request
 - Requirements
 - Architecture
-- Generated file names
-- Generated file information
+- Generated files
+- Tasks
+- Test results
+- Code review
+- Debug attempts
 
 ---
 
-## 🔄 LangGraph Workflow
+## Generated Projects
 
-The current workflow is implemented using LangGraph.
+Generated applications are currently stored inside:
 
 ```text
-START
-  │
-  ▼
+generated_projects/
+```
+
+For example:
+
+```text
+generated_projects/
+└── generated_project/
+    ├── src/
+    ├── tests/
+    └── README.md
+```
+
+The current implementation uses a generated project directory for the workflow.
+
+> **Note:** Unique project IDs and isolated project directories are planned for a future version.
+
+---
+
+## Testing DevTeam AI
+
+A simple end-to-end test can be performed by sending a project-generation request:
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/generate" `
+  -Method Post `
+  -ContentType "application/json" `
+  -Body '{"request":"Create a simple Python calculator application"}'
+```
+
+A successful workflow should proceed through:
+
+```text
 Project Manager
-  │
-  ▼
+    ↓
 Architect
-  │
-  ▼
+    ↓
 Developer
-  │
-  ▼
-END
+    ↓
+File System
+    ↓
+Tester
+    ↓
+Code Reviewer
+    ↓
+Documentation
 ```
 
-The workflow uses a shared `ProjectState` object to pass information between agents.
-
----
-
-## 📦 Project State
-
-The shared state currently supports:
+If generated tests fail, the workflow can enter:
 
 ```text
-user_request
-requirements
-architecture
-tasks
-generated_files
-test_results
-errors
-review
-final_response
+Tester
+   ↓
+Debugger
+   ↓
+Tester
 ```
 
-This state is designed to support the future multi-agent workflow.
+until the tests pass or the debugging-attempt limit is reached.
 
 ---
 
-## 🗺️ Roadmap
+## Error Handling
 
-### Phase 1 — Core Workflow
+The system includes several layers of validation.
+
+### API Validation
+
+An empty project request is rejected.
+
+### File System Validation
+
+The file system tool prevents:
+
+```text
+Absolute paths
+Path traversal
+Writing outside the project directory
+```
+
+### Code Validation
+
+Python source files can be parsed using Python's AST parser before execution.
+
+### Test Validation
+
+The tester checks generated tests and executes appropriate test suites.
+
+### LLM Fallback
+
+If one configured LLM provider fails, the router can attempt another configured provider.
+
+---
+
+## Current Status
+
+### Implemented
 
 - [x] Project Manager Agent
 - [x] Architect Agent
 - [x] Developer Agent
+- [x] File System Agent
+- [x] Tester Agent
+- [x] Debugger Agent
+- [x] Code Reviewer Agent
+- [x] Documentation Agent
 - [x] LangGraph workflow
-- [x] Gemini integration
+- [x] FastAPI backend
+- [x] Multi-provider LLM fallback
+- [x] Generated project files
+- [x] Automated testing
+- [x] Debugging loop
+- [x] Code review
+- [x] Documentation generation
+- [x] File-system path protection
 
-### Phase 2 — Project Generation
+---
 
-- [ ] File System Agent
-- [ ] Create generated project directories
-- [ ] Write generated source files
-- [ ] Project templates
-- [ ] Better code-generation validation
+## Roadmap
 
-### Phase 3 — Testing
+The following features are planned for future development:
 
-- [ ] Tester Agent
-- [ ] Automated test execution
-- [ ] Error collection
-- [ ] Test result reporting
+### Project Management
 
-### Phase 4 — Debugging
+- [ ] Unique project IDs
+- [ ] Separate folder for every generated project
+- [ ] Project history
+- [ ] Project status tracking
 
-- [ ] Debugger Agent
-- [ ] Automatic error analysis
-- [ ] Automatic code fixes
-- [ ] Re-test after fixes
+### Frontend
 
-### Phase 5 — Code Quality
+- [ ] React dashboard
+- [ ] Tailwind CSS interface
+- [ ] Real-time agent activity
+- [ ] Project generation interface
+- [ ] Generated-file viewer
+- [ ] Test-result dashboard
 
-- [ ] Code Reviewer Agent
-- [ ] Security checks
-- [ ] Code quality analysis
-- [ ] Architecture validation
+### Database
 
-### Phase 6 — Documentation
+- [ ] PostgreSQL integration
+- [ ] Store project metadata
+- [ ] Store workflow history
+- [ ] Store generated project information
 
-- [ ] Documentation Agent
-- [ ] Automatic README generation
-- [ ] API documentation
-- [ ] Project documentation
+### Project Export
 
-### Phase 7 — Multi-Provider LLM
+- [ ] ZIP download
+- [ ] Project export
+- [ ] Generated-project management
 
-Planned support for multiple LLM providers:
+### Developer Tools
+
+- [ ] Git integration
+- [ ] GitHub integration
+- [ ] Automatic repository creation
+- [ ] Commit generation
+
+### AI Infrastructure
+
+- [ ] Provider health tracking
+- [ ] Provider cooldown after quota failures
+- [ ] Improved model selection
+- [ ] Better agent memory
+- [ ] More advanced debugging
+
+### Security
+
+- [ ] Stronger code-execution sandbox
+- [ ] Resource limits
+- [ ] Restricted subprocess environment
+- [ ] More robust generated-code isolation
+
+---
+
+## Project Vision
+
+The long-term goal of DevTeam AI is to create an autonomous software engineering environment where a user can provide a software idea and an AI development team can collaboratively transform that idea into a working software project.
+
+The system is designed around the concept of specialized AI agents working together rather than a single general-purpose coding agent.
 
 ```text
-Gemini
-  │
-  ├── Groq
-  │
-  └── OpenRouter
+Idea
+ ↓
+Requirements
+ ↓
+Architecture
+ ↓
+Implementation
+ ↓
+Files
+ ↓
+Testing
+ ↓
+Debugging
+ ↓
+Code Review
+ ↓
+Documentation
+ ↓
+Software Project
 ```
-
-The goal is to make the LLM layer provider-independent and allow controlled fallback between supported providers.
-
-### Phase 8 — Frontend
-
-- [ ] React frontend
-- [ ] Vite setup
-- [ ] Tailwind CSS
-- [ ] Project-generation dashboard
-- [ ] Agent execution status
-- [ ] Generated code viewer
-- [ ] Test results dashboard
 
 ---
 
-## 🔐 Security
+## Author
 
-Never commit secrets to GitHub.
-
-The following files should remain local:
-
-```text
-.env
-venv/
-__pycache__/
-```
-
-Recommended `.gitignore` entries:
-
-```gitignore
-backend/.env
-backend/venv/
-__pycache__/
-*.pyc
-.env
-node_modules/
-dist/
-```
-
-If an API key is accidentally exposed, revoke it and create a new one.
-
----
-
-## 📌 Current Limitations
-
-The project is still under active development.
-
-Currently:
-
-- The workflow generates requirements and architecture using an LLM.
-- The Developer Agent generates source-file information but the complete automated project-writing pipeline is not finished.
-- Testing and debugging agents are not implemented yet.
-- The React frontend is not implemented yet.
-- Database integration is planned.
-- LLM provider fallback is planned.
-
----
-
-## 📈 Development Workflow
-
-For each major feature:
-
-```text
-1. Implement
-      ↓
-2. Test
-      ↓
-3. Update README
-      ↓
-4. Git add
-      ↓
-5. Git commit
-      ↓
-6. Git push
-```
-
-Example:
-
-```powershell
-git add .
-git commit -m "Add Tester Agent"
-git push origin main
-```
-
-The README should be updated whenever a significant feature, agent, architecture change, setup requirement, or API change is introduced.
-
----
-
-## 👨‍💻 Project
-
-**DevTeam AI**
+**Omm Prakash Parida**
 
 GitHub:
 
+```text
+https://github.com/OmmPrakash-07
+```
+
+Project Repository:
+
+```text
 https://github.com/OmmPrakash-07/DevTeam-AI
+```
 
 ---
 
-## 📄 License
+## License
 
-License information will be added as the project progresses.
-
----
-
-### ⭐ Project Status
-
-**Status: 🚧 Active Development**
-
-Current milestone:
-
-```text
-Project Manager → Architect → Developer
-```
-
-Next major milestone:
-
-```text
-Developer → File System → Tester → Debugger
-```
+This project is currently under development.
