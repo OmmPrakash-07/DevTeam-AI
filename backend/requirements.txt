@@ -1,0 +1,10 @@
+fastapi==0.141.1
+uvicorn[standard]==0.53.0
+python-dotenv==1.2.3
+langchain==1.4.1
+langchain-core==1.6.3
+langchain-google-genai==4.4.0
+langchain-openai==1.6.2
+langgraph==1.2.11
+anthropic==1.7.0
+openai==3.16.2
