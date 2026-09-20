@@ -1,31 +1,49 @@
 from pathlib import Path
 
-from graph.state import ProjectState
+
+BASE_DIR = Path(__file__).resolve().parents[2] / "generated_projects"
 
 
-BASE_DIR = (
-    Path(__file__).resolve().parents[2] / "generated_projects"
-)
+def get_project_dir(project_id: str) -> Path:
+    """
+    Return the isolated directory for a project.
+    """
+
+    if not project_id:
+        raise ValueError("Project ID is required.")
+
+    project_id = project_id.strip()
+
+    # Only allow safe project IDs.
+    if not project_id.startswith("project_"):
+        raise ValueError(f"Invalid project ID: {project_id}")
+
+    if "/" in project_id or "\\" in project_id:
+        raise ValueError("Invalid project ID.")
+
+    project_dir = (BASE_DIR / project_id).resolve()
+
+    # Make sure the project directory stays inside BASE_DIR.
+    try:
+        project_dir.relative_to(BASE_DIR.resolve())
+    except ValueError:
+        raise ValueError("Project directory is outside the allowed base directory.")
+
+    project_dir.mkdir(parents=True, exist_ok=True)
+
+    return project_dir
 
 
 def create_project_files(
-    project_name: str,
+    project_id: str,
     files: list[dict]
 ) -> list[str]:
 
-    project_dir = BASE_DIR / project_name
-
-    project_dir.mkdir(
-        parents=True,
-        exist_ok=True
-    )
+    project_dir = get_project_dir(project_id)
 
     created_files = []
 
     for file in files:
-
-        if not isinstance(file, dict):
-            continue
 
         relative_path = file.get("path")
         content = file.get("content", "")
@@ -35,65 +53,34 @@ def create_project_files(
 
         path = Path(relative_path)
 
-        # Prevent absolute paths
+        # Absolute paths are not allowed.
         if path.is_absolute():
             raise ValueError(
                 f"Absolute paths are not allowed: {relative_path}"
             )
 
-        # Prevent path traversal
         target = (project_dir / path).resolve()
 
+        # Prevent path traversal.
         try:
-            target.relative_to(project_dir.resolve())
+            target.relative_to(project_dir)
         except ValueError:
             raise ValueError(
                 f"Path traversal is not allowed: {relative_path}"
             )
 
-        # Create parent directories
         target.parent.mkdir(
             parents=True,
             exist_ok=True
         )
 
-        # Write file
         target.write_text(
-            str(content),
+            content,
             encoding="utf-8"
         )
 
         created_files.append(
-            str(target.relative_to(BASE_DIR))
+            str(target.relative_to(project_dir))
         )
 
     return created_files
-
-
-def filesystem_agent(state: ProjectState) -> ProjectState:
-
-    tasks = state.get("tasks", [])
-
-    if not tasks:
-        raise RuntimeError(
-            "File System Agent received no files from Developer Agent."
-        )
-
-    print("\n========== FILE SYSTEM AGENT ==========")
-
-    created_files = create_project_files(
-        "generated_project",
-        tasks
-    )
-
-    print(f"✅ Created {len(created_files)} files:")
-
-    for file_path in created_files:
-        print(f"   📄 {file_path}")
-
-    print("=======================================\n")
-
-    return {
-        **state,
-        "generated_files": created_files
-    }

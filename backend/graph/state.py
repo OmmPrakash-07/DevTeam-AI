@@ -2,6 +2,8 @@ from typing import TypedDict, List, Dict, Any
 
 
 class ProjectState(TypedDict, total=False):
+    project_id: str
+
     user_request: str
 
     requirements: List[str]

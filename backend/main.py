@@ -1,4 +1,6 @@
 from fastapi import FastAPI, HTTPException
+from datetime import datetime
+import uuid
 
 from graph.workflow import create_workflow
 
@@ -36,7 +38,14 @@ def generate_project(request: dict):
             detail="Please provide a software request."
         )
 
+    project_id = (
+        f"project_"
+        f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_"
+        f"{uuid.uuid4().hex[:6]}"
+    )
+
     initial_state = {
+        "project_id": project_id,
         "user_request": user_request,
         "debug_attempts": 0,
         "errors": []
@@ -47,6 +56,10 @@ def generate_project(request: dict):
     )
 
     return {
+        "project_id": result.get(
+            "project_id"
+        ),
+
         "user_request": result.get(
             "user_request"
         ),

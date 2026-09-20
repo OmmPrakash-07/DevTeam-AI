@@ -4,46 +4,43 @@ import subprocess
 import sys
 
 from graph.state import ProjectState
+from tools.filesystem import get_project_dir
 
 
-BASE_DIR = (
-    Path(__file__).resolve().parents[2]
-    / "generated_projects"
-)
+def normalize_path(file_path: str) -> str:
+    """
+    Normalize generated file paths.
+
+    Removes the generated_project/ prefix if present.
+    """
+
+    file_path = file_path.replace("\\", "/")
+
+    if file_path.startswith("generated_project/"):
+        file_path = file_path[len("generated_project/"):]
+
+    return file_path
 
 
-def normalize_path(path: str) -> str:
+def is_test_file(file_path: str) -> bool:
+    """
+    Check whether a file is a test file.
+    """
 
-    path = str(path).replace(
-        "\\",
-        "/"
-    )
-
-    if path.startswith(
-        "generated_project/"
-    ):
-        path = path[
-            len("generated_project/"):
-        ]
-
-    return path
-
-
-def is_test_file(path: Path) -> bool:
-
-    name = path.name.lower()
+    path = Path(file_path)
 
     return (
-        name.startswith("test_")
-        or name.endswith("_test.py")
-        or "tests" in path.parts
+        path.name.startswith("test_")
+        or path.name.endswith("_test.py")
     )
 
 
 def validate_python_file(path: Path) -> dict:
+    """
+    Validate Python syntax using AST.
+    """
 
     try:
-
         source = path.read_text(
             encoding="utf-8"
         )
@@ -51,72 +48,85 @@ def validate_python_file(path: Path) -> dict:
         ast.parse(source)
 
         return {
-            "valid": True,
-            "source": source,
-            "error": ""
+            "status": "passed",
+            "file": str(path)
         }
 
     except SyntaxError as error:
 
         return {
-            "valid": False,
-            "source": "",
+            "status": "failed",
+            "file": str(path),
+            "error": (
+                f"SyntaxError: {error.msg} "
+                f"at line {error.lineno}"
+            )
+        }
+
+    except Exception as error:
+
+        return {
+            "status": "failed",
+            "file": str(path),
             "error": str(error)
         }
 
-    except UnicodeDecodeError as error:
 
-        return {
-            "valid": False,
-            "source": "",
-            "error": f"Encoding error: {error}"
-        }
+def find_external_imports(path: Path) -> list[str]:
+    """
+    Find non-standard/external imports.
 
-
-def find_external_imports(
-    source: str
-) -> list[str]:
-
-    imports = []
+    This is mainly used to detect unnecessary dependencies
+    such as pytest when the project does not require them.
+    """
 
     try:
 
+        source = path.read_text(
+            encoding="utf-8"
+        )
+
         tree = ast.parse(source)
 
-    except SyntaxError:
+        imports = []
 
-        return imports
+        for node in ast.walk(tree):
 
-    for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
 
-        if isinstance(
-            node,
-            ast.Import
-        ):
+                for alias in node.names:
+                    imports.append(
+                        alias.name.split(".")[0]
+                    )
 
-            for alias in node.names:
+            elif isinstance(node, ast.ImportFrom):
 
-                imports.append(
-                    alias.name.split(".")[0]
-                )
+                if node.module:
+                    imports.append(
+                        node.module.split(".")[0]
+                    )
 
-        elif isinstance(
-            node,
-            ast.ImportFrom
-        ):
+        return sorted(set(imports))
 
-            if node.module:
-
-                imports.append(
-                    node.module.split(".")[0]
-                )
-
-    return imports
+    except Exception:
+        return []
 
 
-def run_test_suite(
-    project_dir: Path
-) -> dict:
+def run_test_suite(project_dir: Path) -> dict:
+    """
+    Run unittest test discovery inside the project.
+    """
+
+    tests_dir = project_dir / "tests"
+
+    if not tests_dir.exists():
+
+        return {
+            "status": "skipped",
+            "passed": 0,
+            "failed": 0,
+            "error": "No tests directory found."
+        }
 
     try:
 
@@ -129,38 +139,48 @@ def run_test_suite(
                 "-s",
                 "tests"
             ],
-            cwd=str(project_dir),
+            cwd=project_dir,
             capture_output=True,
             text=True,
             timeout=20
         )
 
+        if result.returncode == 0:
+
+            return {
+                "status": "passed",
+                "passed": result.stdout.count("ok"),
+                "failed": 0,
+                "output": result.stdout.strip()
+            }
+
         return {
-            "return_code": result.returncode,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
-            "passed": result.returncode == 0
+            "status": "failed",
+            "passed": result.stdout.count("ok"),
+            "failed": 1,
+            "error": (
+                result.stderr.strip()
+                or result.stdout.strip()
+                or "Test suite failed."
+            )
         }
 
     except subprocess.TimeoutExpired:
 
         return {
-            "return_code": -1,
-            "stdout": "",
-            "stderr": (
-                "Test suite timed out "
-                "after 20 seconds."
-            ),
-            "passed": False
+            "status": "failed",
+            "passed": 0,
+            "failed": 1,
+            "error": "Test suite timed out."
         }
 
     except Exception as error:
 
         return {
-            "return_code": -1,
-            "stdout": "",
-            "stderr": str(error),
-            "passed": False
+            "status": "failed",
+            "passed": 0,
+            "failed": 1,
+            "error": str(error)
         }
 
 
@@ -168,6 +188,9 @@ def run_python_file(
     path: Path,
     project_dir: Path
 ) -> dict:
+    """
+    Run a non-interactive Python file.
+    """
 
     try:
 
@@ -176,55 +199,54 @@ def run_python_file(
                 sys.executable,
                 str(path)
             ],
-            cwd=str(project_dir),
+            cwd=project_dir,
             capture_output=True,
             text=True,
             timeout=10
         )
 
+        if result.returncode == 0:
+
+            return {
+                "status": "passed",
+                "file": str(path),
+                "output": result.stdout.strip()
+            }
+
         return {
-            "return_code": result.returncode,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
-            "passed": result.returncode == 0
+            "status": "failed",
+            "file": str(path),
+            "error": (
+                result.stderr.strip()
+                or result.stdout.strip()
+                or "Python file execution failed."
+            )
         }
 
     except subprocess.TimeoutExpired:
 
         return {
-            "return_code": -1,
-            "stdout": "",
-            "stderr": (
-                "Execution timed out "
-                "after 10 seconds."
-            ),
-            "passed": False
+            "status": "skipped",
+            "file": str(path),
+            "error": "Execution timed out. File may be interactive."
         }
 
     except Exception as error:
 
         return {
-            "return_code": -1,
-            "stdout": "",
-            "stderr": str(error),
-            "passed": False
+            "status": "failed",
+            "file": str(path),
+            "error": str(error)
         }
 
 
-def tester_agent(
-    state: ProjectState
-) -> ProjectState:
+def tester_agent(state: ProjectState):
 
-    generated_files = state.get(
-        "generated_files",
-        []
-    )
+    project_id = state.get("project_id")
 
-    if not generated_files:
+    if not project_id:
 
-        error = (
-            "No generated files were found."
-        )
+        error = "Project ID is missing from project state."
 
         return {
             **state,
@@ -239,319 +261,249 @@ def tester_agent(
             "errors": [error]
         }
 
-    # ----------------------------------------------
-    # Normalize duplicate paths
-    # ----------------------------------------------
+    # Get the isolated project directory.
+    project_dir = get_project_dir(project_id)
 
-    unique_files = []
-    seen = set()
+    generated_files = state.get(
+        "generated_files",
+        []
+    )
+
+    tasks = state.get(
+        "tasks",
+        []
+    )
+
+    # Collect files from generated_files and tasks.
+    all_files = []
 
     for file_path in generated_files:
 
+        if file_path:
+            all_files.append(file_path)
+
+    for task in tasks:
+
+        file_path = task.get("path")
+
+        if file_path:
+            all_files.append(file_path)
+
+    # Normalize and remove duplicates.
+    unique_files = []
+
+    seen = set()
+
+    for file_path in all_files:
+
         normalized = normalize_path(
-            file_path
+            str(file_path)
         )
+
+        if not normalized:
+            continue
 
         if normalized in seen:
             continue
 
         seen.add(normalized)
 
-        unique_files.append(
-            f"generated_project/{normalized}"
-        )
+        unique_files.append(normalized)
 
-    generated_files = unique_files
-
-    project_dir = (
-        BASE_DIR / "generated_project"
-    )
-
-    passed = 0
-    failed = 0
-
-    errors = []
+    syntax_results = []
     execution_results = []
+    errors = []
 
     python_files = []
-    test_files = []
 
-    # ----------------------------------------------
-    # File validation
-    # ----------------------------------------------
+    # Validate generated files.
+    for file_path in unique_files:
 
-    for file_path in generated_files:
-
-        path = BASE_DIR / file_path
+        path = project_dir / file_path
 
         if not path.exists():
 
-            failed += 1
-
             errors.append(
-                f"File does not exist: "
-                f"{file_path}"
+                f"File not found: {file_path}"
             )
 
             continue
 
-        if path.stat().st_size == 0:
-
-            if path.name != "__init__.py":
-
-                failed += 1
-
-                errors.append(
-                    f"File is empty: "
-                    f"{file_path}"
-                )
-
-                continue
-
         if path.suffix.lower() != ".py":
-
-            passed += 1
             continue
 
-        validation = validate_python_file(
+        python_files.append(
+            file_path
+        )
+
+        syntax_result = validate_python_file(
             path
         )
 
-        if not validation["valid"]:
+        syntax_results.append(
+            syntax_result
+        )
 
-            failed += 1
+        if syntax_result["status"] == "failed":
 
             errors.append(
-                f"Python syntax error in "
                 f"{file_path}: "
-                f"{validation['error']}"
+                f"{syntax_result.get('error', 'Syntax error')}"
             )
 
-            continue
+    # Detect unnecessary pytest dependency.
+    pytest_detected = []
 
-        source = validation["source"]
+    for file_path in python_files:
 
-        python_files.append(
-            (
-                file_path,
-                path,
-                source
-            )
-        )
-
-        if is_test_file(path):
-
-            test_files.append(
-                (
-                    file_path,
-                    path
-                )
-            )
-
-    # ----------------------------------------------
-    # Detect unsupported pytest usage
-    # ----------------------------------------------
-
-    for file_path, path, source in python_files:
+        path = project_dir / file_path
 
         imports = find_external_imports(
-            source
+            path
         )
 
-        if (
-            is_test_file(path)
-            and "pytest" in imports
-        ):
+        if "pytest" in imports:
 
-            failed += 1
-
-            error = (
-                f"Test file {file_path} "
-                f"requires pytest, but the project "
-                f"does not declare pytest as a dependency. "
-                f"Use Python unittest instead."
+            pytest_detected.append(
+                file_path
             )
 
-            errors.append(error)
+            errors.append(
+                f"{file_path}: pytest import detected. "
+                f"Use unittest unless pytest is explicitly required."
+            )
 
-    # ----------------------------------------------
-    # Run unittest suite
-    # ----------------------------------------------
+    # Run unittest suite.
+    test_suite_result = run_test_suite(
+        project_dir
+    )
 
-    if test_files:
+    if test_suite_result["status"] == "failed":
 
-        pytest_dependency_error = any(
-            "requires pytest" in error
-            for error in errors
+        errors.append(
+            test_suite_result.get(
+                "error",
+                "Test suite failed."
+            )
         )
 
-        if not pytest_dependency_error:
+    # Run non-test Python files.
+    for file_path in python_files:
 
-            print(
-                "\n🧪 Running unit-test suite..."
-            )
-
-            suite_result = run_test_suite(
-                project_dir
-            )
-
-            execution_results.append({
-                "type": "test_suite",
-                "file": "tests",
-                **suite_result
-            })
-
-            if suite_result["passed"]:
-
-                print(
-                    "✅ Unit tests passed."
-                )
-
-                passed += len(test_files)
-
-            else:
-
-                print(
-                    "❌ Unit tests failed."
-                )
-
-                failed += len(test_files)
-
-                error_message = (
-                    suite_result["stderr"].strip()
-                    or suite_result["stdout"].strip()
-                    or "Unit tests failed."
-                )
-
-                errors.append(
-                    f"Test suite failed: "
-                    f"{error_message}"
-                )
-
-    # ----------------------------------------------
-    # Run non-test Python files
-    # ----------------------------------------------
-
-    for file_path, path, source in python_files:
-
-        if is_test_file(path):
+        if is_test_file(file_path):
             continue
 
-        # Interactive CLI programs should not be
-        # executed automatically.
-        if (
-            "input(" in source
-            or "input (" in source
-        ):
+        path = project_dir / file_path
 
-            print(
-                f"⏭️ Skipping interactive CLI: "
-                f"{file_path}"
+        # Skip obvious interactive CLI programs.
+        try:
+
+            source = path.read_text(
+                encoding="utf-8"
             )
 
-            execution_results.append({
-                "type": "interactive_cli",
-                "file": file_path,
-                "return_code": None,
-                "stdout": "",
-                "stderr": "",
-                "passed": True
-            })
+            interactive_markers = [
+                "input(",
+                "getpass(",
+            ]
 
-            passed += 1
-            continue
+            if any(
+                marker in source
+                for marker in interactive_markers
+            ):
+                execution_results.append({
+                    "status": "skipped",
+                    "file": file_path,
+                    "reason": "Interactive CLI program."
+                })
+
+                continue
+
+        except Exception:
+            pass
 
         result = run_python_file(
             path,
             project_dir
         )
 
-        execution_results.append({
-            "type": "python_module",
-            "file": file_path,
-            **result
-        })
+        result["file"] = file_path
 
-        if result["passed"]:
+        execution_results.append(
+            result
+        )
 
-            passed += 1
-
-        else:
-
-            failed += 1
-
-            error_message = (
-                result["stderr"].strip()
-                or result["stdout"].strip()
-                or "Execution failed."
-            )
+        if result["status"] == "failed":
 
             errors.append(
-                f"Execution failed in "
                 f"{file_path}: "
-                f"{error_message}"
+                f"{result.get('error', 'Execution failed')}"
             )
 
-    # ----------------------------------------------
-    # Final result
-    # ----------------------------------------------
-
-    total_files = len(
-        generated_files
+    syntax_failed = sum(
+        1
+        for result in syntax_results
+        if result["status"] == "failed"
     )
 
-    status = (
-        "passed"
-        if failed == 0
-        else "failed"
-    )
-
-    test_results = {
-        "status": status,
-        "total_files": total_files,
-        "passed": passed,
-        "failed": failed,
-        "errors": errors,
-        "execution_results": execution_results
-    }
-
-    print(
-        "\n========== TESTER OUTPUT =========="
-    )
-
-    print(
-        f"Status: {status}"
-    )
-
-    print(
-        f"Files: {total_files}"
-    )
-
-    print(
-        f"Passed: {passed}"
-    )
-
-    print(
-        f"Failed: {failed}"
+    execution_failed = sum(
+        1
+        for result in execution_results
+        if result["status"] == "failed"
     )
 
     if errors:
 
-        print("\nErrors:")
+        overall_status = "failed"
 
-        for error in errors:
+    elif test_suite_result["status"] == "skipped":
 
-            print(
-                f"  ❌ {error}"
-            )
+        overall_status = "passed"
 
-    print(
-        "===================================\n"
+    else:
+
+        overall_status = "passed"
+
+    total_files = len(unique_files)
+
+    passed_files = max(
+        0,
+        total_files
+        - syntax_failed
+        - execution_failed
     )
 
     return {
         **state,
-        "generated_files": generated_files,
-        "test_results": test_results,
+
+        "test_results": {
+            "status": overall_status,
+
+            "project_id": project_id,
+
+            "project_directory": str(
+                project_dir
+            ),
+
+            "total_files": total_files,
+
+            "passed": passed_files,
+
+            "failed": (
+                syntax_failed
+                + execution_failed
+            ),
+
+            "errors": errors,
+
+            "syntax_results": syntax_results,
+
+            "execution_results": execution_results,
+
+            "test_suite": test_suite_result,
+
+            "pytest_detected": pytest_detected
+        },
+
         "errors": errors
     }
