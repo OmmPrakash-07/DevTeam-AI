@@ -396,6 +396,8 @@ function App() {
   const [request, setRequest] = useState("");
   const [loading, setLoading] = useState(false);
   const [response, setResponse] = useState(null);
+  const [assistantResponse, setAssistantResponse] = useState(null);
+  const [generationIntent, setGenerationIntent] = useState(null);
   const [error, setError] = useState("");
   const [activityHistory, setActivityHistory] = useState([]);
   const [currentActiveAgent, setCurrentActiveAgent] = useState(null);
@@ -516,7 +518,7 @@ function App() {
     }
   };
 
-  const generateProject = () => {
+  const sendMessage = () => {
     const trimmedRequest = request.trim();
     if (!trimmedRequest) {
       setError("Please describe the software you want to build.");
@@ -528,9 +530,11 @@ function App() {
     const seenEvents = new Set();
     setActivityHistory([]);
     setCurrentActiveAgent(null);
+    setGenerationIntent(null);
     setLoading(true);
     setError("");
     setResponse(null);
+    setAssistantResponse(null);
     setProjectActionError("");
     setViewerProjectId(null);
 
@@ -548,6 +552,18 @@ function App() {
           eventSourceRef.current = null;
         }
       };
+
+      eventSource.addEventListener("intent", (event) => {
+        if (eventSourceRef.current !== eventSource) return;
+        try {
+          const data = JSON.parse(event.data);
+          if (["ANSWER", "CODING_HELP", "BUILD_PROJECT"].includes(data.intent)) {
+            setGenerationIntent(data.intent);
+          }
+        } catch {
+          // Ignore malformed intent payloads; the terminal event handles errors.
+        }
+      });
 
       eventSource.addEventListener("activity", (event) => {
         if (eventSourceRef.current !== eventSource) return;
@@ -584,6 +600,8 @@ function App() {
 
         try {
           const data = JSON.parse(event.data);
+          setGenerationIntent("BUILD_PROJECT");
+          setAssistantResponse(null);
           const finalHistory = Array.isArray(data.activity_history) &&
             data.activity_history.every((item) => item && typeof item === "object");
 
@@ -599,6 +617,26 @@ function App() {
           refreshRecentProjects();
         } catch {
           setError("The generation finished, but its response could not be read.");
+          setLoading(false);
+        } finally {
+          closeStream();
+        }
+      });
+
+      eventSource.addEventListener("response", (event) => {
+        if (settled || eventSourceRef.current !== eventSource) return;
+        settled = true;
+
+        try {
+          const data = JSON.parse(event.data);
+          if (!["ANSWER", "CODING_HELP"].includes(data.intent) || typeof data.answer !== "string") {
+            throw new Error("Invalid assistant response.");
+          }
+          setGenerationIntent(data.intent);
+          setAssistantResponse(data);
+          setLoading(false);
+        } catch {
+          setError("The assistant response could not be read.");
           setLoading(false);
         } finally {
           closeStream();
@@ -633,6 +671,8 @@ function App() {
     eventSourceRef.current = null;
     setLoading(false);
     setResponse(null);
+    setAssistantResponse(null);
+    setGenerationIntent(null);
     setError("");
     setRequest("");
     setActivityHistory([]);
@@ -749,11 +789,11 @@ function App() {
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
                 <h3 className="font-semibold">
-                  What do you want to build?
+                  Ask or build with DevTeam AI
                 </h3>
 
                 <p className="mt-1 text-xs text-slate-500 sm:text-sm">
-                  Describe the project in natural language.
+                  Ask a question, get coding help, or describe a project to build.
                 </p>
               </div>
 
@@ -766,7 +806,7 @@ function App() {
               ref={requestInputRef}
               value={request}
               onChange={(e) => setRequest(e.target.value)}
-              placeholder="Example: Create a Python expense tracker with categories, monthly reports and unit tests..."
+              placeholder="Ask anything or describe a software project..."
               rows={5}
               disabled={loading}
               className="w-full resize-none rounded-xl border border-white/10 bg-slate-950/70 px-4 py-4 text-sm leading-6 text-slate-200 outline-none transition placeholder:text-slate-600 focus:border-blue-400/50 focus:ring-2 focus:ring-blue-400/10 disabled:cursor-not-allowed disabled:opacity-60"
@@ -785,17 +825,17 @@ function App() {
               </span>
 
               <button
-                onClick={generateProject}
+                onClick={sendMessage}
                 disabled={loading}
                 className={`${buttonStyles.primary} w-full px-5 py-3 text-sm sm:w-auto`}
               >
                 {loading ? (
                   <span className="flex items-center justify-center gap-2">
                     <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                    Generating...
+                    Working...
                   </span>
                 ) : (
-                  "🚀 Generate Project"
+                  "Send"
                 )}
               </button>
 
@@ -813,7 +853,7 @@ function App() {
           onDownload={downloadProject}
         />
 
-        {/* Pipeline */}
+        {generationIntent === "BUILD_PROJECT" && (
         <section className="mt-12">
 
           <div className="relative mb-5 text-center">
@@ -853,8 +893,9 @@ function App() {
 
           </div>
         </section>
+        )}
 
-        {(loading || response || activityHistory.length > 0) && (
+        {generationIntent === "BUILD_PROJECT" && (loading || response || activityHistory.length > 0) && (
           <section className="mt-12">
             <LiveAgentActivity
               activityHistory={activityHistory}
@@ -873,6 +914,10 @@ function App() {
           />
         )}
 
+        {assistantResponse && (
+          <AssistantResponse response={assistantResponse} />
+        )}
+
         {viewerProjectId && (
           <ProjectViewer
             projectId={viewerProjectId}
@@ -889,17 +934,17 @@ function App() {
         )}
 
         {/* Empty state */}
-        {!response && !loading && (
+        {!response && !assistantResponse && !loading && (
           <section className="mt-12 rounded-2xl border border-dashed border-white/10 p-8 text-center sm:p-12">
             <div className="text-4xl">🧠</div>
 
             <h3 className="mt-4 text-lg font-semibold">
-              Ready to build
+              Ready when you are
             </h3>
 
             <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
-              Enter a software requirement above and let the AI development
-              team handle the engineering workflow.
+              Ask a question, request coding help, or describe an application
+              and DevTeam AI will choose the right way to help.
             </p>
           </section>
         )}
@@ -923,6 +968,18 @@ function App() {
   );
 }
 
+
+function AssistantResponse({ response }) {
+  const title = response.intent === "CODING_HELP" ? "Coding Help" : "Answer";
+
+  return (
+    <section className="mt-10 rounded-2xl border border-blue-300/15 bg-white/[0.035] p-5 shadow-xl shadow-black/10 sm:p-7" aria-live="polite">
+      <p className="text-xs font-semibold tracking-wide text-blue-300">{title}</p>
+      <h3 className="mt-2 break-words text-lg font-semibold text-slate-100">{response.user_request}</h3>
+      <div className="mt-4 whitespace-pre-wrap break-words text-sm leading-7 text-slate-300">{response.answer}</div>
+    </section>
+  );
+}
 
 function RecentProjects({
   sectionRef,

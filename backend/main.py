@@ -15,6 +15,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 
 from graph.workflow import create_workflow
+from services.intent import (
+    ALLOWED_INTENTS,
+    classify_intent,
+    generate_assistant_response,
+)
 from services.project_repository import project_repository, utc_timestamp
 from tools.filesystem import get_project_dir
 
@@ -182,6 +187,31 @@ def generate_project(request: dict):
             detail="Please provide a software request."
         )
 
+    try:
+        intent = classify_intent(user_request)
+    except Exception:
+        raise HTTPException(
+            status_code=503,
+            detail="Unable to classify this request right now.",
+        ) from None
+
+    if intent in {"ANSWER", "CODING_HELP"}:
+        try:
+            answer = generate_assistant_response(user_request, intent)
+        except Exception:
+            raise HTTPException(
+                status_code=503,
+                detail="Unable to answer this request right now.",
+            ) from None
+        return {
+            "intent": intent,
+            "user_request": user_request,
+            "answer": answer,
+        }
+
+    if intent not in ALLOWED_INTENTS:
+        raise HTTPException(status_code=400, detail="Unsupported request intent.")
+
     project_id = (
         f"project_"
         f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_"
@@ -208,7 +238,10 @@ def generate_project(request: dict):
             detail="Unable to save project history.",
         ) from None
 
-    return build_generate_response(result)
+    return {
+        **build_generate_response(result),
+        "intent": "BUILD_PROJECT",
+    }
 
 
 @app.get("/generate/stream")
@@ -220,20 +253,6 @@ async def generate_project_stream(request: str = Query(...)):
             status_code=400,
             detail="Please provide a software request."
         )
-
-    project_id = (
-        f"project_"
-        f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_"
-        f"{uuid.uuid4().hex[:6]}"
-    )
-    created_at = utc_timestamp()
-
-    initial_state = {
-        "project_id": project_id,
-        "user_request": user_request,
-        "debug_attempts": 0,
-        "errors": []
-    }
 
     async def event_stream():
         loop = asyncio.get_running_loop()
@@ -253,9 +272,60 @@ async def generate_project_stream(request: str = Query(...)):
                 disconnected.set()
 
         def run_workflow_stream():
-            final_state = None
-
             try:
+                try:
+                    intent = classify_intent(user_request)
+                except Exception:
+                    publish((
+                        "error",
+                        {"message": "Unable to classify this request right now."},
+                    ))
+                    return
+
+                if disconnected.is_set():
+                    return
+
+                publish(("intent", {"intent": intent}))
+
+                if intent in {"ANSWER", "CODING_HELP"}:
+                    try:
+                        answer = generate_assistant_response(user_request, intent)
+                    except Exception:
+                        publish((
+                            "error",
+                            {"message": "Unable to answer this request right now."},
+                        ))
+                        return
+
+                    if not disconnected.is_set():
+                        publish(("response", {
+                            "intent": intent,
+                            "user_request": user_request,
+                            "answer": answer,
+                        }))
+                    return
+
+                if intent != "BUILD_PROJECT":
+                    publish((
+                        "error",
+                        {"message": "Unable to classify this request right now."},
+                    ))
+                    return
+
+                project_id = (
+                    f"project_"
+                    f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_"
+                    f"{uuid.uuid4().hex[:6]}"
+                )
+                created_at = utc_timestamp()
+                initial_state = {
+                    "project_id": project_id,
+                    "user_request": user_request,
+                    "debug_attempts": 0,
+                    "errors": [],
+                }
+                final_state = None
+
                 for mode, chunk in workflow.stream(
                     initial_state,
                     stream_mode=["custom", "values"],
@@ -275,7 +345,10 @@ async def generate_project_stream(request: str = Query(...)):
                     persist_completed_project(final_state, created_at)
                     publish((
                         "complete",
-                        build_generate_response(final_state),
+                        {
+                            **build_generate_response(final_state),
+                            "intent": "BUILD_PROJECT",
+                        },
                     ))
             except Exception:
                 publish((
@@ -298,9 +371,6 @@ async def generate_project_stream(request: str = Query(...)):
 
                 event_name, event_data = item
                 yield format_sse_event(event_name, event_data)
-
-                if event_name in {"complete", "error"}:
-                    break
         finally:
             disconnected.set()
             if worker.done():
