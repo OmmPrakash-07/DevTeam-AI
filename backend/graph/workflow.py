@@ -5,6 +5,7 @@ from langgraph.graph import (
     START,
     END,
 )
+from langgraph.config import get_stream_writer
 
 from graph.state import ProjectState
 from agents.project_manager import project_manager_agent
@@ -34,9 +35,10 @@ def _timestamp() -> str:
 
 
 def _record_activity(state: ProjectState, event: dict) -> None:
-    """Append an activity event to the current state history."""
+    """Record an event in state and publish it to this run's stream."""
     history = state.setdefault("activity_history", [])
     history.append(event)
+    get_stream_writer()(event)
 
 
 def _with_activity(agent_name: str, agent):
@@ -68,11 +70,11 @@ def _with_activity(agent_name: str, agent):
 
         try:
             result = agent(state)
-        except Exception as error:
+        except Exception:
             _record_activity(state, {
                 **event_fields,
                 "status": "failed",
-                "message": f"{display_name} failed: {error}",
+                "message": f"{display_name} failed.",
                 "timestamp": _timestamp(),
             })
             state["current_active_agent"] = None
@@ -90,7 +92,7 @@ def _with_activity(agent_name: str, agent):
             else:
                 completion_message = "Tester completed; project tests passed."
 
-        result.setdefault("activity_history", []).append({
+        _record_activity(result, {
             **event_fields,
             "status": completion_status,
             "message": completion_message,

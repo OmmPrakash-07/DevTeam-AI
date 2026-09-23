@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const API_URL =
   import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
@@ -162,50 +162,136 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [response, setResponse] = useState(null);
   const [error, setError] = useState("");
+  const [activityHistory, setActivityHistory] = useState([]);
+  const [currentActiveAgent, setCurrentActiveAgent] = useState(null);
+  const eventSourceRef = useRef(null);
 
-  const generateProject = async () => {
-    if (!request.trim()) {
+  useEffect(() => () => {
+    eventSourceRef.current?.close();
+    eventSourceRef.current = null;
+  }, []);
+
+  const generateProject = () => {
+    const trimmedRequest = request.trim();
+    if (!trimmedRequest) {
       setError("Please describe the software you want to build.");
       return;
     }
 
+    eventSourceRef.current?.close();
+    eventSourceRef.current = null;
+    const seenEvents = new Set();
+    setActivityHistory([]);
+    setCurrentActiveAgent(null);
     setLoading(true);
     setError("");
     setResponse(null);
 
     try {
-      const res = await fetch(`${API_URL}/generate`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          request: request.trim(),
-        }),
+      const streamUrl = new URL(
+        `${API_URL.replace(/\/+$/, "")}/generate/stream`,
+        window.location.href
+      );
+      streamUrl.searchParams.set("request", trimmedRequest);
+
+      const eventSource = new EventSource(streamUrl.toString());
+      eventSourceRef.current = eventSource;
+      let settled = false;
+
+      const closeStream = () => {
+        eventSource.close();
+        if (eventSourceRef.current === eventSource) {
+          eventSourceRef.current = null;
+        }
+      };
+
+      eventSource.addEventListener("activity", (event) => {
+        if (eventSourceRef.current !== eventSource) return;
+
+        try {
+          const activity = JSON.parse(event.data);
+          if (!activity || typeof activity !== "object") return;
+          const signature = JSON.stringify([
+            activity.agent_name,
+            activity.status,
+            activity.timestamp,
+            activity.attempt_number,
+            activity.message,
+          ]);
+          if (seenEvents.has(signature)) return;
+          seenEvents.add(signature);
+
+          setActivityHistory((previous) => [...previous, activity]);
+          if (activity.status === "running") {
+            setCurrentActiveAgent(activity.agent_name || null);
+          } else if (["completed", "failed"].includes(activity.status)) {
+            setCurrentActiveAgent((current) =>
+              current === activity.agent_name ? null : current
+            );
+          }
+        } catch {
+          // Ignore malformed activity payloads and continue consuming the stream.
+        }
       });
 
-      if (!res.ok) {
-        const message = await res.text();
-        throw new Error(message || "Generation failed.");
-      }
+      eventSource.addEventListener("complete", (event) => {
+        if (settled || eventSourceRef.current !== eventSource) return;
+        settled = true;
 
-      const data = await res.json();
+        try {
+          const data = JSON.parse(event.data);
+          const finalHistory = Array.isArray(data.activity_history) &&
+            data.activity_history.every((item) => item && typeof item === "object");
 
-      setResponse(data);
-    } catch (err) {
-      setError(
-        err.message ||
-          "Unable to connect to the DevTeam AI backend."
-      );
-    } finally {
+          setActivityHistory((previous) => {
+            if (!finalHistory || data.activity_history.length < previous.length) {
+              return previous;
+            }
+            return data.activity_history;
+          });
+          setCurrentActiveAgent(data.current_active_agent ?? null);
+          setResponse(data);
+          setLoading(false);
+        } catch {
+          setError("The generation finished, but its response could not be read.");
+          setLoading(false);
+        } finally {
+          closeStream();
+        }
+      });
+
+      eventSource.addEventListener("error", () => {
+        if (settled || eventSourceRef.current !== eventSource) return;
+        settled = true;
+        closeStream();
+        setError("Generation failed. Please try again.");
+        setLoading(false);
+      });
+
+      eventSource.onerror = () => {
+        if (settled || eventSourceRef.current !== eventSource) return;
+        settled = true;
+        closeStream();
+        setError("Unable to connect to the DevTeam AI backend.");
+        setLoading(false);
+      };
+    } catch {
+      eventSourceRef.current?.close();
+      eventSourceRef.current = null;
+      setError("Unable to connect to the DevTeam AI backend.");
       setLoading(false);
     }
   };
 
   const resetProject = () => {
+    eventSourceRef.current?.close();
+    eventSourceRef.current = null;
+    setLoading(false);
     setResponse(null);
     setError("");
     setRequest("");
+    setActivityHistory([]);
+    setCurrentActiveAgent(null);
   };
 
   return (
@@ -371,6 +457,15 @@ function App() {
           </div>
         </section>
 
+        {(loading || response || activityHistory.length > 0) && (
+          <section className="mt-12">
+            <LiveAgentActivity
+              activityHistory={activityHistory}
+              currentActiveAgent={currentActiveAgent}
+            />
+          </section>
+        )}
+
         {/* Result */}
         {response && (
           <ProjectResult
@@ -419,9 +514,6 @@ function ProjectResult({ response, onReset }) {
   const testResults = response.test_results || {};
   const testSuite = testResults.test_suite || {};
   const review = response.review || {};
-  const activityHistory = Array.isArray(response.activity_history)
-    ? response.activity_history
-    : [];
 
   return (
     <section className="mt-12 space-y-6">
@@ -465,11 +557,6 @@ function ProjectResult({ response, onReset }) {
         </div>
 
       </div>
-
-      <LiveAgentActivity
-        activityHistory={activityHistory}
-        currentActiveAgent={response.current_active_agent}
-      />
 
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
