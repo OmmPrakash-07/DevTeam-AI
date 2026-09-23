@@ -3,6 +3,72 @@ import { useEffect, useRef, useState } from "react";
 const API_URL =
   import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
+const buttonStyles = {
+  primary: "rounded-xl bg-blue-500 font-semibold text-white shadow-lg shadow-blue-500/20 transition hover:bg-blue-400 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 disabled:cursor-not-allowed disabled:opacity-50",
+  secondary: "rounded-xl border border-blue-300/25 bg-blue-400/10 font-semibold text-blue-200 transition hover:bg-blue-400/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 disabled:cursor-wait disabled:opacity-60",
+  ghost: "rounded-xl border border-white/10 text-slate-300 transition hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 disabled:cursor-not-allowed disabled:opacity-50",
+  danger: "rounded-xl border border-red-400/25 bg-red-400/10 font-semibold text-red-200 transition hover:bg-red-400/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 disabled:cursor-not-allowed disabled:opacity-50",
+};
+
+function isHiddenProjectFile(path) {
+  const normalizedPath = String(path || "").replace(/\\/g, "/");
+  const segments = normalizedPath.split("/");
+  const filename = segments[segments.length - 1] || "";
+
+  return segments.includes("__pycache__") || /\.(?:pyc|pyo)$/i.test(filename);
+}
+
+function buildProjectNavigatorEntries(files) {
+  const entries = [];
+  const addedFolders = new Set();
+
+  files.filter((file) => !isHiddenProjectFile(file.path)).forEach((file) => {
+    const normalizedPath = String(file.path || "").replace(/\\/g, "/");
+    const segments = normalizedPath.split("/").filter(Boolean);
+
+    segments.slice(0, -1).forEach((segment, index) => {
+      const folderPath = segments.slice(0, index + 1).join("/");
+      if (!addedFolders.has(folderPath)) {
+        addedFolders.add(folderPath);
+        entries.push({
+          type: "folder",
+          path: folderPath,
+          name: segment,
+          depth: index,
+        });
+      }
+    });
+
+    entries.push({
+      type: "file",
+      path: file.path,
+      name: segments[segments.length - 1] || file.path,
+      depth: Math.max(segments.length - 1, 0),
+      file,
+    });
+  });
+
+  return entries;
+}
+
+function FileIcon({ className = "h-4 w-4" }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M14 3v6h6M8 13h8M8 17h8" />
+    </svg>
+  );
+}
+
+function FolderIcon({ className = "h-4 w-4" }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 6.5A1.5 1.5 0 0 1 4.5 5H10l2 2h7.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 9h18" />
+    </svg>
+  );
+}
+
 function apiEndpoint(path) {
   return new URL(
     `${API_URL.replace(/\/+$/, "")}${path}`,
@@ -101,6 +167,140 @@ const activityStatusStyles = {
   },
 };
 
+const navigationItems = [
+  { id: "home", label: "Home", icon: "home" },
+  { id: "new-project", label: "New Project", icon: "plus" },
+  { id: "my-projects", label: "My Projects", icon: "folder" },
+  { id: "project-history", label: "Project History", icon: "history" },
+  { id: "settings", label: "Settings", icon: "settings" },
+];
+
+function DevTeamLogo({ className = "h-11 w-11" }) {
+  return (
+    <img
+      src="/jarvis.png"
+      alt="DevTeam AI logo"
+      className={`${className} shrink-0 object-contain`}
+    />
+  );
+}
+
+function HamburgerIcon({ open }) {
+  return (
+    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+      <path d={open ? "M6 6l12 12" : "M4 6h16"} />
+      <path d="M4 12h16" className={`transition-opacity duration-200 ${open ? "opacity-0" : "opacity-100"}`} />
+      <path d={open ? "M6 18L18 6" : "M4 18h16"} />
+    </svg>
+  );
+}
+
+function SettingsIcon() {
+  return (
+    <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M10.3 2.8h3.4l.5 2a7.6 7.6 0 0 1 1.6.9l1.9-.8 1.7 3-1.5 1.4a7.7 7.7 0 0 1 0 1.9l1.5 1.4-1.7 3-1.9-.8a7.6 7.6 0 0 1-1.6.9l-.5 2h-3.4l-.5-2a7.6 7.6 0 0 1-1.6-.9l-1.9.8-1.7-3 1.5-1.4a7.7 7.7 0 0 1 0-1.9L4.6 7.9l1.7-3 1.9.8a7.6 7.6 0 0 1 1.6-.9z" />
+      <circle cx="12" cy="12" r="2.75" />
+    </svg>
+  );
+}
+
+function NavigationIcon({ name }) {
+  if (name === "settings") return <SettingsIcon />;
+
+  const common = {
+    className: "h-5 w-5 shrink-0",
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.7",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    "aria-hidden": "true",
+  };
+
+  if (name === "home") {
+    return <svg {...common}><path d="m3 10 9-7 9 7" /><path d="M5 9v11h14V9M9 20v-6h6v6" /></svg>;
+  }
+  if (name === "plus") {
+    return <svg {...common}><path d="M12 5v14M5 12h14" /></svg>;
+  }
+  if (name === "folder") {
+    return <svg {...common}><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H10l2 2h7.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z" /><path d="M3 9h18" /></svg>;
+  }
+  if (name === "history") {
+    return <svg {...common}><path d="M3 12a9 9 0 1 0 2.6-6.4L3 8" /><path d="M3 4v4h4M12 7v5l3 2" /></svg>;
+  }
+  return null;
+}
+
+function NavItem({ item, active, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-current={active ? "page" : undefined}
+      className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 ${active ? "border border-blue-300/20 bg-blue-400/10 text-blue-200" : "border border-transparent text-slate-400 hover:bg-white/5 hover:text-slate-100"}`}
+    >
+      <NavigationIcon name={item.icon} />
+      <span>{item.label}</span>
+    </button>
+  );
+}
+
+function Sidebar({ open, activeItem, onNavigate, settingsMessage }) {
+  return (
+    <>
+      {open && (
+        <button
+          type="button"
+          aria-label="Close navigation"
+          onClick={() => onNavigate(null)}
+          className="fixed inset-x-0 bottom-0 top-[72px] z-40 bg-slate-950/55 backdrop-blur-[2px] lg:hidden"
+        />
+      )}
+      <aside
+        id="devteam-sidebar"
+        aria-label="Primary navigation"
+        aria-hidden={!open}
+        inert={!open}
+        className={`fixed bottom-0 left-0 top-[72px] z-50 flex w-80 max-w-[calc(100vw-1rem)] flex-col overflow-y-auto overscroll-contain border-r border-white/10 bg-slate-950/95 px-5 py-6 shadow-2xl shadow-black/30 backdrop-blur-2xl transition-transform duration-300 ease-in-out ${open ? "translate-x-0" : "-translate-x-full"}`}
+      >
+        <div className="flex items-center gap-3 border-b border-white/10 pb-6">
+          <DevTeamLogo />
+          <div className="min-w-0">
+            <h2 className="font-bold tracking-tight text-slate-100">DevTeam AI</h2>
+            <p className="mt-1 text-xs leading-5 text-slate-400">Your AI Software Development Team</p>
+          </div>
+        </div>
+
+        <nav aria-label="Main menu" className="mt-6 space-y-2">
+          {navigationItems.map((item) => (
+            <NavItem
+              key={item.id}
+              item={item}
+              active={activeItem === item.id}
+              onClick={() => onNavigate(item.id)}
+            />
+          ))}
+        </nav>
+
+        {settingsMessage && (
+          <p role="status" className="mt-4 rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2.5 text-xs leading-5 text-slate-400">
+            {settingsMessage}
+          </p>
+        )}
+
+        <div className="mt-auto rounded-2xl border border-blue-300/15 bg-gradient-to-br from-blue-400/[0.08] to-purple-400/[0.06] p-4">
+          <DevTeamLogo className="h-9 w-9" />
+          <p className="mt-3 text-sm leading-6 text-slate-300">
+            Turn your idea into working software with AI agents
+          </p>
+        </div>
+      </aside>
+    </>
+  );
+}
+
 function getActivityLabel(event) {
   const name = event.display_name ||
     stages.find((stage) => stage.id === event.agent_name)?.name ||
@@ -190,6 +390,9 @@ function LiveAgentActivity({ activityHistory = [], currentActiveAgent }) {
 }
 
 function App() {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [activeNavigationItem, setActiveNavigationItem] = useState("home");
+  const [settingsMessage, setSettingsMessage] = useState("");
   const [request, setRequest] = useState("");
   const [loading, setLoading] = useState(false);
   const [response, setResponse] = useState(null);
@@ -203,6 +406,11 @@ function App() {
   const [recentProjectsLoading, setRecentProjectsLoading] = useState(true);
   const [recentProjectsError, setRecentProjectsError] = useState("");
   const eventSourceRef = useRef(null);
+  const hamburgerButtonRef = useRef(null);
+  const homeSectionRef = useRef(null);
+  const requestSectionRef = useRef(null);
+  const requestInputRef = useRef(null);
+  const recentProjectsSectionRef = useRef(null);
   const recentProjectsRequestRef = useRef(0);
   const recentProjectsRefreshRef = useRef(null);
 
@@ -241,6 +449,47 @@ function App() {
       controller.abort();
     };
   }, []);
+
+  useEffect(() => {
+    if (!sidebarOpen) return undefined;
+
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        setSidebarOpen(false);
+        hamburgerButtonRef.current?.focus();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [sidebarOpen]);
+
+  const navigateSidebar = (destination) => {
+    if (destination === null) {
+      setSidebarOpen(false);
+      hamburgerButtonRef.current?.focus();
+      return;
+    }
+
+    setActiveNavigationItem(destination);
+    if (destination === "settings") {
+      setSettingsMessage("Settings are not available yet.");
+      setSidebarOpen(true);
+      return;
+    }
+
+    setSettingsMessage("");
+    setSidebarOpen(false);
+
+    if (destination === "home") {
+      homeSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else if (destination === "new-project") {
+      requestSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      requestInputRef.current?.focus({ preventScroll: true });
+    } else if (destination === "my-projects" || destination === "project-history") {
+      recentProjectsSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
 
   const refreshRecentProjects = async () => {
     const requestId = ++recentProjectsRequestRef.current;
@@ -422,40 +671,55 @@ function App() {
     <div className="min-h-screen bg-slate-950 text-slate-100">
 
       {/* Header */}
-      <header className="sticky top-0 z-50 border-b border-white/10 bg-slate-950/80 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
-
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/15 text-xl ring-1 ring-blue-400/20">
-              🤖
-            </div>
-
-            <div>
-              <h1 className="text-lg font-bold tracking-tight sm:text-xl">
+      <header className="sticky top-0 z-50 h-[72px] border-b border-white/10 bg-slate-950/80 backdrop-blur-xl">
+        <div className="mx-auto flex h-full max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+          <div className="flex min-w-0 items-center gap-2 pl-14 sm:gap-3">
+            <DevTeamLogo className="h-10 w-10 sm:h-11 sm:w-11" />
+            <div className="min-w-0">
+              <h1 className="text-sm font-bold tracking-tight text-slate-100 sm:text-xl">
                 DevTeam AI
               </h1>
-
-              <p className="hidden text-xs text-slate-400 sm:block">
+              <p className="max-w-36 text-[10px] leading-3 text-slate-400 sm:max-w-none sm:text-xs sm:leading-normal">
                 Autonomous Software Development Team
               </p>
             </div>
           </div>
-
-          <div className="flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1.5">
+          <div className="flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2 py-1.5 sm:px-3">
             <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
-            <span className="text-xs font-medium text-emerald-300">
+            <span className="hidden text-xs font-medium text-emerald-300 sm:block">
               Backend Online
             </span>
           </div>
-
         </div>
       </header>
 
+      <button
+        ref={hamburgerButtonRef}
+        type="button"
+        aria-label={sidebarOpen ? "Close navigation" : "Open navigation"}
+        aria-expanded={sidebarOpen}
+        aria-controls="devteam-sidebar"
+        onClick={() => {
+          setSettingsMessage("");
+          setSidebarOpen((open) => !open);
+        }}
+        className="fixed left-4 top-4 z-[60] flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-slate-900/90 text-slate-300 shadow-lg shadow-black/20 backdrop-blur transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+      >
+        <HamburgerIcon open={sidebarOpen} />
+      </button>
+
+      <Sidebar
+        open={sidebarOpen}
+        activeItem={activeNavigationItem}
+        onNavigate={navigateSidebar}
+        settingsMessage={settingsMessage}
+      />
+
       {/* Main */}
-      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
+      <main className={`mx-auto max-w-7xl px-4 py-8 transition-[margin] duration-300 ease-in-out sm:px-6 sm:py-10 lg:px-8 ${sidebarOpen ? "lg:ml-80" : ""}`}>
 
         {/* Hero */}
-        <section className="mx-auto max-w-4xl text-center">
+        <section ref={homeSectionRef} className="mx-auto max-w-4xl scroll-mt-24 text-center">
 
           <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-blue-400/20 bg-blue-400/10 px-4 py-2 text-xs font-medium text-blue-300">
             <span>⚡</span>
@@ -478,7 +742,7 @@ function App() {
         </section>
 
         {/* Request Box */}
-        <section className="mx-auto mt-10 max-w-4xl">
+        <section ref={requestSectionRef} className="mx-auto mt-10 max-w-4xl scroll-mt-24">
 
           <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 shadow-2xl shadow-black/20 backdrop-blur-xl sm:p-6">
 
@@ -499,6 +763,7 @@ function App() {
             </div>
 
             <textarea
+              ref={requestInputRef}
               value={request}
               onChange={(e) => setRequest(e.target.value)}
               placeholder="Example: Create a Python expense tracker with categories, monthly reports and unit tests..."
@@ -522,7 +787,7 @@ function App() {
               <button
                 onClick={generateProject}
                 disabled={loading}
-                className="w-full rounded-xl bg-blue-500 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-blue-500/20 transition hover:bg-blue-400 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                className={`${buttonStyles.primary} w-full px-5 py-3 text-sm sm:w-auto`}
               >
                 {loading ? (
                   <span className="flex items-center justify-center gap-2">
@@ -539,6 +804,7 @@ function App() {
         </section>
 
         <RecentProjects
+          sectionRef={recentProjectsSectionRef}
           projects={recentProjects}
           loading={recentProjectsLoading}
           error={recentProjectsError}
@@ -550,18 +816,16 @@ function App() {
         {/* Pipeline */}
         <section className="mt-12">
 
-          <div className="mb-5 flex items-end justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-widest text-blue-400">
-                Development Pipeline
-              </p>
+          <div className="relative mb-5 text-center">
+            <p className="text-xs font-semibold tracking-wide text-blue-400">
+              Development Pipeline
+            </p>
 
-              <h3 className="mt-1 text-xl font-bold sm:text-2xl">
-                AI Agent Workflow
-              </h3>
-            </div>
+            <h3 className="mt-1 text-xl font-bold sm:text-2xl">
+              AI Agent Workflow
+            </h3>
 
-            <span className="text-xs text-slate-500">
+            <span className="mt-2 block text-xs text-slate-500 sm:absolute sm:right-0 sm:top-1/2 sm:mt-0">
               8 Agents
             </span>
           </div>
@@ -661,6 +925,7 @@ function App() {
 
 
 function RecentProjects({
+  sectionRef,
   projects,
   loading,
   error,
@@ -669,13 +934,11 @@ function RecentProjects({
   onDownload,
 }) {
   return (
-    <section className="mt-10">
-      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-widest text-blue-400">Your Workspace</p>
-          <h3 className="mt-1 text-xl font-bold sm:text-2xl">Recent Projects</h3>
-        </div>
-        <span className="text-xs text-slate-500">Saved project history</span>
+    <section ref={sectionRef} className="mt-10 scroll-mt-24">
+      <div className="mb-4 text-center">
+        <p className="text-xs font-semibold uppercase tracking-widest text-blue-400">Your Workspace</p>
+        <h3 className="mt-1 text-xl font-bold sm:text-2xl">Recent Projects</h3>
+        <p className="mt-1 text-xs text-slate-500">Saved project history</p>
       </div>
 
       {loading ? (
@@ -712,7 +975,7 @@ function RecentProjects({
                   <button
                     type="button"
                     onClick={() => onView(project.project_id)}
-                    className="rounded-lg border border-blue-300/25 bg-blue-400/10 px-3 py-2 text-xs font-semibold text-blue-200 transition hover:bg-blue-400/20"
+                    className={`${buttonStyles.secondary} px-3 py-2 text-xs`}
                   >
                     View Project
                   </button>
@@ -720,7 +983,7 @@ function RecentProjects({
                     type="button"
                     onClick={() => onDownload(project.project_id)}
                     disabled={downloadLoading}
-                    className="rounded-lg bg-blue-500 px-3 py-2 text-xs font-semibold text-white transition hover:bg-blue-400 disabled:cursor-wait disabled:opacity-60"
+                    className={`${buttonStyles.primary} px-3 py-2 text-xs`}
                   >
                     Download ZIP
                   </button>
@@ -762,7 +1025,7 @@ function ProjectGenerationComplete({
           <button
             type="button"
             onClick={onView}
-            className="rounded-xl border border-blue-300/30 bg-blue-400/10 px-4 py-3 text-sm font-semibold text-blue-200 transition hover:bg-blue-400/20"
+            className={`${buttonStyles.primary} px-4 py-3 text-sm`}
           >
             View Project
           </button>
@@ -770,7 +1033,7 @@ function ProjectGenerationComplete({
             type="button"
             onClick={onDownload}
             disabled={downloadLoading}
-            className="rounded-xl bg-blue-500 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-blue-500/20 transition hover:bg-blue-400 disabled:cursor-wait disabled:opacity-60"
+            className={`${buttonStyles.secondary} px-4 py-3 text-sm`}
           >
             {downloadLoading ? "Preparing ZIP..." : "Download ZIP"}
           </button>
@@ -810,7 +1073,7 @@ function ProjectViewer({ projectId, onClose }) {
 
         if (active) {
           setFiles(data.files);
-          setSelectedPath(data.files[0]?.path || "");
+          setSelectedPath(data.files.find((file) => !isHiddenProjectFile(file.path))?.path || "");
         }
       } catch {
         if (active && !controller.signal.aborted) {
@@ -828,6 +1091,8 @@ function ProjectViewer({ projectId, onClose }) {
     };
   }, [projectId]);
 
+  const visibleFiles = files.filter((file) => !isHiddenProjectFile(file.path));
+  const navigatorEntries = buildProjectNavigatorEntries(visibleFiles);
   const selectedFile = files.find((file) => file.path === selectedPath);
 
   return (
@@ -840,7 +1105,7 @@ function ProjectViewer({ projectId, onClose }) {
         <button
           type="button"
           onClick={onClose}
-          className="self-start rounded-lg border border-white/10 px-3 py-2 text-sm text-slate-300 transition hover:bg-white/5 sm:self-auto"
+          className={`${buttonStyles.ghost} self-start px-3 py-2 text-sm sm:self-auto`}
         >
           Close Viewer
         </button>
@@ -850,28 +1115,40 @@ function ProjectViewer({ projectId, onClose }) {
         <p className="p-6 text-sm text-slate-400">Loading project files...</p>
       ) : error ? (
         <p role="alert" className="p-6 text-sm text-red-300">{error}</p>
-      ) : files.length === 0 ? (
-        <p className="p-6 text-sm text-slate-400">This project contains no files.</p>
+      ) : visibleFiles.length === 0 ? (
+        <p className="p-6 text-sm text-slate-400">No previewable project files are available.</p>
       ) : (
         <div className="grid min-h-80 lg:grid-cols-[minmax(14rem,0.8fr)_minmax(0,2fr)]">
           <nav aria-label="Generated project files" className="border-b border-white/10 p-3 lg:border-b-0 lg:border-r">
             <p className="px-2 pb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Files</p>
             <ul className="max-h-[32rem] space-y-1 overflow-auto">
-              {files.map((file) => {
-                const depth = Math.min(file.path.split("/").length - 1, 8);
-                const selected = selectedPath === file.path;
+              {navigatorEntries.map((entry) => {
+                const depth = Math.min(entry.depth, 8);
+                const selected = entry.type === "file" && selectedPath === entry.path;
                 return (
-                  <li key={file.path}>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedPath(file.path)}
-                      title={file.path}
-                      className={`w-full truncate rounded-lg py-2 pr-2 text-left font-mono text-xs transition ${selected ? "bg-blue-400/15 text-blue-200" : "text-slate-400 hover:bg-white/5 hover:text-slate-200"}`}
-                      style={{ paddingLeft: `${12 + depth * 12}px` }}
-                    >
-                      <span className="mr-2 text-slate-500">{file.is_binary ? "▧" : "▤"}</span>
-                      {file.path}
-                    </button>
+                  <li key={`${entry.type}-${entry.path}`}>
+                    {entry.type === "folder" ? (
+                      <span
+                        title={entry.path}
+                        className="flex w-full items-center gap-2 truncate py-2 pr-2 font-mono text-xs text-slate-500"
+                        style={{ paddingLeft: `${12 + depth * 12}px` }}
+                      >
+                        <FolderIcon className="h-4 w-4 shrink-0" />
+                        <span className="truncate">{entry.name}</span>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPath(entry.path)}
+                        title={entry.path}
+                        aria-label={`Open ${entry.path}`}
+                        className={`${buttonStyles.ghost} flex w-full items-center gap-2 truncate py-2 pr-2 text-left font-mono text-xs ${selected ? "bg-blue-400/15 text-blue-200" : "text-slate-400 hover:text-slate-200"}`}
+                        style={{ paddingLeft: `${12 + depth * 12}px` }}
+                      >
+                        <FileIcon className="h-4 w-4 shrink-0" />
+                        <span className="truncate">{entry.name}</span>
+                      </button>
+                    )}
                   </li>
                 );
               })}
@@ -923,7 +1200,7 @@ function ProjectResult({ response, onReset }) {
 
           <button
             onClick={onReset}
-            className="rounded-lg border border-white/10 px-4 py-2 text-sm text-slate-300 transition hover:bg-white/5"
+            className={`${buttonStyles.secondary} px-4 py-2 text-sm`}
           >
             New Project
           </button>
