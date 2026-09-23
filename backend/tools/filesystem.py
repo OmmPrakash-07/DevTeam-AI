@@ -1,10 +1,10 @@
 from pathlib import Path
 
 
-BASE_DIR = Path(__file__).resolve().parents[2] / "generated_projects"
+BASE_DIR = Path(__file__).resolve().parents[2] / "recent_projects"
 
 
-def get_project_dir(project_id: str) -> Path:
+def get_project_dir(project_id: str, create: bool = True) -> Path:
     """
     Return the isolated directory for a project.
     """
@@ -21,15 +21,23 @@ def get_project_dir(project_id: str) -> Path:
     if "/" in project_id or "\\" in project_id:
         raise ValueError("Invalid project ID.")
 
-    project_dir = (BASE_DIR / project_id).resolve()
+    base_dir = BASE_DIR.resolve()
+    candidate = BASE_DIR / project_id
 
-    # Make sure the project directory stays inside BASE_DIR.
-    try:
-        project_dir.relative_to(BASE_DIR.resolve())
-    except ValueError:
+    # A project root must be its own directory, not a symlink that aliases
+    # another project (or another location within the storage root).
+    if candidate.is_symlink():
+        raise ValueError("Project directory cannot be a symlink.")
+
+    project_dir = candidate.resolve()
+
+    # Project IDs are single path components, so the resolved directory must
+    # remain a direct child of the storage root with the same name.
+    if project_dir.parent != base_dir or project_dir.name != project_id:
         raise ValueError("Project directory is outside the allowed base directory.")
 
-    project_dir.mkdir(parents=True, exist_ok=True)
+    if create:
+        project_dir.mkdir(parents=True, exist_ok=True)
 
     return project_dir
 

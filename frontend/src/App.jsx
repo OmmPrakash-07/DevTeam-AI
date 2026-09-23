@@ -3,6 +3,38 @@ import { useEffect, useRef, useState } from "react";
 const API_URL =
   import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
+function apiEndpoint(path) {
+  return new URL(
+    `${API_URL.replace(/\/+$/, "")}${path}`,
+    window.location.href
+  );
+}
+
+async function fetchRecentProjects(signal) {
+  const response = await fetch(apiEndpoint("/projects"), { signal });
+  if (!response.ok) throw new Error("Recent projects could not be loaded.");
+
+  const data = await response.json();
+  if (!Array.isArray(data.projects)) throw new Error("Recent projects response was invalid.");
+  return data.projects;
+}
+
+function formatProjectDate(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? "Date unavailable"
+    : date.toLocaleDateString(undefined, {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+  });
+}
+
+function formatProjectStatus(value) {
+  if (!value) return "Not available";
+  return value.replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 const stages = [
   {
     id: "project_manager",
@@ -164,12 +196,76 @@ function App() {
   const [error, setError] = useState("");
   const [activityHistory, setActivityHistory] = useState([]);
   const [currentActiveAgent, setCurrentActiveAgent] = useState(null);
+  const [projectActionError, setProjectActionError] = useState("");
+  const [viewerProjectId, setViewerProjectId] = useState(null);
+  const [downloadLoading, setDownloadLoading] = useState(false);
+  const [recentProjects, setRecentProjects] = useState([]);
+  const [recentProjectsLoading, setRecentProjectsLoading] = useState(true);
+  const [recentProjectsError, setRecentProjectsError] = useState("");
   const eventSourceRef = useRef(null);
+  const recentProjectsRequestRef = useRef(0);
+  const recentProjectsRefreshRef = useRef(null);
 
   useEffect(() => () => {
     eventSourceRef.current?.close();
     eventSourceRef.current = null;
+    recentProjectsRefreshRef.current?.abort();
+    recentProjectsRefreshRef.current = null;
   }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const requestId = ++recentProjectsRequestRef.current;
+    let active = true;
+
+    fetchRecentProjects(controller.signal)
+      .then((projects) => {
+        if (active && recentProjectsRequestRef.current === requestId) {
+          setRecentProjects(projects);
+          setRecentProjectsError("");
+        }
+      })
+      .catch(() => {
+        if (active && recentProjectsRequestRef.current === requestId && !controller.signal.aborted) {
+          setRecentProjectsError("Recent projects are temporarily unavailable.");
+        }
+      })
+      .finally(() => {
+        if (active && recentProjectsRequestRef.current === requestId) {
+          setRecentProjectsLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, []);
+
+  const refreshRecentProjects = async () => {
+    const requestId = ++recentProjectsRequestRef.current;
+    recentProjectsRefreshRef.current?.abort();
+    const controller = new AbortController();
+    recentProjectsRefreshRef.current = controller;
+    try {
+      const projects = await fetchRecentProjects(controller.signal);
+      if (recentProjectsRequestRef.current === requestId) {
+        setRecentProjects(projects);
+        setRecentProjectsError("");
+      }
+    } catch {
+      if (recentProjectsRequestRef.current === requestId && !controller.signal.aborted) {
+        setRecentProjectsError("Recent projects are temporarily unavailable.");
+      }
+    } finally {
+      if (!controller.signal.aborted && recentProjectsRequestRef.current === requestId) {
+        setRecentProjectsLoading(false);
+      }
+      if (recentProjectsRefreshRef.current === controller) {
+        recentProjectsRefreshRef.current = null;
+      }
+    }
+  };
 
   const generateProject = () => {
     const trimmedRequest = request.trim();
@@ -186,12 +282,11 @@ function App() {
     setLoading(true);
     setError("");
     setResponse(null);
+    setProjectActionError("");
+    setViewerProjectId(null);
 
     try {
-      const streamUrl = new URL(
-        `${API_URL.replace(/\/+$/, "")}/generate/stream`,
-        window.location.href
-      );
+      const streamUrl = apiEndpoint("/generate/stream");
       streamUrl.searchParams.set("request", trimmedRequest);
 
       const eventSource = new EventSource(streamUrl.toString());
@@ -252,6 +347,7 @@ function App() {
           setCurrentActiveAgent(data.current_active_agent ?? null);
           setResponse(data);
           setLoading(false);
+          refreshRecentProjects();
         } catch {
           setError("The generation finished, but its response could not be read.");
           setLoading(false);
@@ -292,6 +388,34 @@ function App() {
     setRequest("");
     setActivityHistory([]);
     setCurrentActiveAgent(null);
+    setProjectActionError("");
+    setViewerProjectId(null);
+  };
+
+  const downloadProject = async (projectId) => {
+    setProjectActionError("");
+    setDownloadLoading(true);
+
+    try {
+      const downloadUrl = apiEndpoint(
+        `/projects/${encodeURIComponent(projectId)}/download`
+      );
+      const downloadResponse = await fetch(downloadUrl);
+      if (!downloadResponse.ok) throw new Error("Download failed.");
+
+      const objectUrl = window.URL.createObjectURL(await downloadResponse.blob());
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = `${projectId}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 1000);
+    } catch {
+      setProjectActionError("Unable to download this project. Please try again.");
+    } finally {
+      setDownloadLoading(false);
+    }
   };
 
   return (
@@ -414,6 +538,15 @@ function App() {
           </div>
         </section>
 
+        <RecentProjects
+          projects={recentProjects}
+          loading={recentProjectsLoading}
+          error={recentProjectsError}
+          downloadLoading={downloadLoading}
+          onView={(projectId) => setViewerProjectId(projectId)}
+          onDownload={downloadProject}
+        />
+
         {/* Pipeline */}
         <section className="mt-12">
 
@@ -466,6 +599,23 @@ function App() {
           </section>
         )}
 
+        {response && (
+          <ProjectGenerationComplete
+            projectId={response.project_id}
+            downloadLoading={downloadLoading}
+            error={projectActionError}
+            onView={() => setViewerProjectId(response.project_id)}
+            onDownload={() => downloadProject(response.project_id)}
+          />
+        )}
+
+        {viewerProjectId && (
+          <ProjectViewer
+            projectId={viewerProjectId}
+            onClose={() => setViewerProjectId(null)}
+          />
+        )}
+
         {/* Result */}
         {response && (
           <ProjectResult
@@ -506,6 +656,241 @@ function App() {
       </footer>
 
     </div>
+  );
+}
+
+
+function RecentProjects({
+  projects,
+  loading,
+  error,
+  downloadLoading,
+  onView,
+  onDownload,
+}) {
+  return (
+    <section className="mt-10">
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-widest text-blue-400">Your Workspace</p>
+          <h3 className="mt-1 text-xl font-bold sm:text-2xl">Recent Projects</h3>
+        </div>
+        <span className="text-xs text-slate-500">Saved project history</span>
+      </div>
+
+      {loading ? (
+        <p className="rounded-xl border border-white/10 bg-white/[0.025] p-4 text-sm text-slate-400">
+          Loading recent projects...
+        </p>
+      ) : error ? (
+        <p role="status" className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-4 text-sm text-amber-200/80">
+          {error}
+        </p>
+      ) : projects.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-white/10 p-5 text-sm text-slate-500">
+          No projects generated yet.
+        </p>
+      ) : (
+        <div className="space-y-3">
+          {projects.map((project) => (
+            <article key={project.project_id} className="rounded-2xl border border-white/10 bg-white/[0.025] p-4 sm:p-5">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="min-w-0">
+                  <h4 className="break-words font-semibold text-slate-100">
+                    {project.user_request || project.project_id}
+                  </h4>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Created: {formatProjectDate(project.created_at)}
+                  </p>
+                  <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400">
+                    <span>Status: <span className={project.status === "completed" ? "text-emerald-300" : project.status === "failed" ? "text-red-300" : "text-slate-300"}>{formatProjectStatus(project.status)}</span></span>
+                    <span>Tests: {formatProjectStatus(project.test_status)}</span>
+                    <span>Files: {project.file_count ?? 0}</span>
+                  </p>
+                </div>
+                <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+                  <button
+                    type="button"
+                    onClick={() => onView(project.project_id)}
+                    className="rounded-lg border border-blue-300/25 bg-blue-400/10 px-3 py-2 text-xs font-semibold text-blue-200 transition hover:bg-blue-400/20"
+                  >
+                    View Project
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onDownload(project.project_id)}
+                    disabled={downloadLoading}
+                    className="rounded-lg bg-blue-500 px-3 py-2 text-xs font-semibold text-white transition hover:bg-blue-400 disabled:cursor-wait disabled:opacity-60"
+                  >
+                    Download ZIP
+                  </button>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+
+function ProjectGenerationComplete({
+  projectId,
+  downloadLoading,
+  error,
+  onView,
+  onDownload,
+}) {
+  return (
+    <section className="mt-10 rounded-2xl border border-emerald-400/25 bg-gradient-to-br from-emerald-400/[0.09] to-blue-400/[0.04] p-5 shadow-xl shadow-emerald-950/10 sm:p-7">
+      <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="flex items-center gap-2 text-emerald-300">
+            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-400/15 text-lg">✓</span>
+            <h3 className="text-lg font-bold sm:text-xl">Project Generation Complete</h3>
+          </div>
+          <p className="mt-2 text-sm text-slate-300">
+            Your project has been successfully generated.
+          </p>
+          <p className="mt-3 text-xs text-slate-400">
+            Project ID: <span className="break-all font-mono text-blue-300">{projectId}</span>
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-2 sm:min-w-64 sm:flex-row">
+          <button
+            type="button"
+            onClick={onView}
+            className="rounded-xl border border-blue-300/30 bg-blue-400/10 px-4 py-3 text-sm font-semibold text-blue-200 transition hover:bg-blue-400/20"
+          >
+            View Project
+          </button>
+          <button
+            type="button"
+            onClick={onDownload}
+            disabled={downloadLoading}
+            className="rounded-xl bg-blue-500 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-blue-500/20 transition hover:bg-blue-400 disabled:cursor-wait disabled:opacity-60"
+          >
+            {downloadLoading ? "Preparing ZIP..." : "Download ZIP"}
+          </button>
+        </div>
+      </div>
+      {error && (
+        <p role="alert" className="mt-4 text-sm text-red-300">{error}</p>
+      )}
+    </section>
+  );
+}
+
+
+function ProjectViewer({ projectId, onClose }) {
+  const [files, setFiles] = useState([]);
+  const [selectedPath, setSelectedPath] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+
+    const loadProject = async () => {
+      setLoading(true);
+      setError("");
+      setFiles([]);
+      setSelectedPath("");
+
+      try {
+        const projectUrl = apiEndpoint(`/projects/${encodeURIComponent(projectId)}`);
+        const projectResponse = await fetch(projectUrl, { signal: controller.signal });
+        if (!projectResponse.ok) throw new Error("Project could not be loaded.");
+
+        const data = await projectResponse.json();
+        if (!Array.isArray(data.files)) throw new Error("Project response was invalid.");
+
+        if (active) {
+          setFiles(data.files);
+          setSelectedPath(data.files[0]?.path || "");
+        }
+      } catch {
+        if (active && !controller.signal.aborted) {
+          setError("Unable to load project files. Please try again.");
+        }
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+
+    loadProject();
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [projectId]);
+
+  const selectedFile = files.find((file) => file.path === selectedPath);
+
+  return (
+    <section className="mt-8 overflow-hidden rounded-2xl border border-white/10 bg-slate-900/80 shadow-2xl shadow-black/30">
+      <div className="flex flex-col gap-3 border-b border-white/10 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-widest text-blue-400">Project Files</p>
+          <h3 className="mt-1 break-all font-mono text-sm text-slate-200">{projectId}</h3>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="self-start rounded-lg border border-white/10 px-3 py-2 text-sm text-slate-300 transition hover:bg-white/5 sm:self-auto"
+        >
+          Close Viewer
+        </button>
+      </div>
+
+      {loading ? (
+        <p className="p-6 text-sm text-slate-400">Loading project files...</p>
+      ) : error ? (
+        <p role="alert" className="p-6 text-sm text-red-300">{error}</p>
+      ) : files.length === 0 ? (
+        <p className="p-6 text-sm text-slate-400">This project contains no files.</p>
+      ) : (
+        <div className="grid min-h-80 lg:grid-cols-[minmax(14rem,0.8fr)_minmax(0,2fr)]">
+          <nav aria-label="Generated project files" className="border-b border-white/10 p-3 lg:border-b-0 lg:border-r">
+            <p className="px-2 pb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Files</p>
+            <ul className="max-h-[32rem] space-y-1 overflow-auto">
+              {files.map((file) => {
+                const depth = Math.min(file.path.split("/").length - 1, 8);
+                const selected = selectedPath === file.path;
+                return (
+                  <li key={file.path}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPath(file.path)}
+                      title={file.path}
+                      className={`w-full truncate rounded-lg py-2 pr-2 text-left font-mono text-xs transition ${selected ? "bg-blue-400/15 text-blue-200" : "text-slate-400 hover:bg-white/5 hover:text-slate-200"}`}
+                      style={{ paddingLeft: `${12 + depth * 12}px` }}
+                    >
+                      <span className="mr-2 text-slate-500">{file.is_binary ? "▧" : "▤"}</span>
+                      {file.path}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </nav>
+
+          <div className="min-w-0">
+            <div className="border-b border-white/10 px-4 py-3 font-mono text-xs text-slate-300">
+              {selectedFile?.path || "Select a file"}
+            </div>
+            {selectedFile?.is_binary || selectedFile?.content == null ? (
+              <p className="p-5 text-sm text-slate-400">This file cannot be previewed as text.</p>
+            ) : (
+              <pre className="max-h-[32rem] overflow-auto p-4 text-xs leading-5 text-slate-300 sm:p-5"><code>{selectedFile?.content ?? ""}</code></pre>
+            )}
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 

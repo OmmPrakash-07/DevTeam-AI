@@ -1,21 +1,35 @@
 import asyncio
 import json
+import io
+import os
+import re
 import threading
-
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
-from fastapi import Query
+import zipfile
+from contextlib import asynccontextmanager
 from datetime import datetime
+from pathlib import Path
 import uuid
 
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response, StreamingResponse
+
 from graph.workflow import create_workflow
+from services.project_repository import project_repository, utc_timestamp
+from tools.filesystem import get_project_dir
+
+
+@asynccontextmanager
+async def app_lifespan(_app):
+    project_repository.initialize()
+    yield
 
 
 app = FastAPI(
     title="DevTeam AI",
     description="Multi-Agent Autonomous Software Development Team",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=app_lifespan,
 )
 
 
@@ -67,6 +81,78 @@ def format_sse_event(event_name: str, data: dict) -> str:
     return f"event: {event_name}\ndata: {encoded_data}\n\n"
 
 
+def persist_completed_project(result: dict, created_at: str) -> dict:
+    project_id = result.get("project_id")
+    user_request = result.get("user_request")
+    project_dir = get_project_dir(project_id, create=False)
+    if not project_dir.is_dir() or not user_request:
+        raise ValueError("Completed project data is unavailable.")
+
+    test_results = result.get("test_results") or {}
+    metadata = {
+        "project_id": project_id,
+        "user_request": user_request,
+        "created_at": created_at,
+        "updated_at": utc_timestamp(),
+        "status": "completed",
+        "test_status": test_results.get("status"),
+        "file_count": len(list(iter_project_files(project_dir))),
+    }
+    project_repository.save_project(metadata)
+    return metadata
+
+
+_PROJECT_ID_PATTERN = re.compile(r"project_[A-Za-z0-9_-]+\Z")
+
+
+def resolve_existing_project_dir(project_id: str) -> Path:
+    if not _PROJECT_ID_PATTERN.fullmatch(project_id):
+        raise HTTPException(status_code=400, detail="Invalid project ID.")
+
+    try:
+        project_dir = get_project_dir(project_id, create=False)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid project ID.") from None
+
+    if not project_dir.is_dir():
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    return project_dir
+
+
+def iter_project_files(project_dir: Path):
+    """Yield resolved regular files that remain inside the project directory."""
+    root = project_dir.resolve(strict=True)
+
+    def raise_walk_error(error):
+        raise error
+
+    for current_dir, directory_names, file_names in os.walk(
+        root,
+        onerror=raise_walk_error,
+        followlinks=False,
+    ):
+        current_path = Path(current_dir)
+        directory_names[:] = sorted(
+            name for name in directory_names
+            if not (current_path / name).is_symlink()
+        )
+
+        for file_name in sorted(file_names):
+            candidate = current_path / file_name
+            if candidate.is_symlink():
+                continue
+
+            resolved_file = candidate.resolve(strict=True)
+            try:
+                relative_path = resolved_file.relative_to(root)
+            except ValueError:
+                continue
+
+            if resolved_file.is_file():
+                yield resolved_file, relative_path.as_posix()
+
+
 # --------------------------------------------------
 # Root Endpoint
 # --------------------------------------------------
@@ -101,6 +187,7 @@ def generate_project(request: dict):
         f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_"
         f"{uuid.uuid4().hex[:6]}"
     )
+    created_at = utc_timestamp()
 
     initial_state = {
         "project_id": project_id,
@@ -112,6 +199,14 @@ def generate_project(request: dict):
     result = workflow.invoke(
         initial_state
     )
+
+    try:
+        persist_completed_project(result, created_at)
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to save project history.",
+        ) from None
 
     return build_generate_response(result)
 
@@ -131,6 +226,7 @@ async def generate_project_stream(request: str = Query(...)):
         f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_"
         f"{uuid.uuid4().hex[:6]}"
     )
+    created_at = utc_timestamp()
 
     initial_state = {
         "project_id": project_id,
@@ -176,6 +272,7 @@ async def generate_project_stream(request: str = Query(...)):
                     if final_state is None:
                         raise RuntimeError("Workflow returned no final state.")
 
+                    persist_completed_project(final_state, created_at)
                     publish((
                         "complete",
                         build_generate_response(final_state),
@@ -218,3 +315,78 @@ async def generate_project_stream(request: str = Query(...)):
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@app.get("/projects")
+def list_projects():
+    try:
+        return {"projects": project_repository.list_projects()}
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to load recent projects.",
+        ) from None
+
+
+@app.get("/projects/{project_id}")
+def get_project_files(project_id: str):
+    project_dir = resolve_existing_project_dir(project_id)
+
+    try:
+        files = []
+        for file_path, relative_path in iter_project_files(project_dir):
+            content_bytes = file_path.read_bytes()
+            is_binary = b"\x00" in content_bytes
+
+            if is_binary:
+                content = None
+            else:
+                try:
+                    content = content_bytes.decode("utf-8")
+                except UnicodeDecodeError:
+                    content = None
+                    is_binary = True
+
+            files.append({
+                "path": relative_path,
+                "content": content,
+                "is_binary": is_binary,
+            })
+
+        return {
+            "project_id": project_id,
+            "files": files,
+        }
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to read project files.",
+        ) from None
+
+
+@app.get("/projects/{project_id}/download")
+def download_project(project_id: str):
+    project_dir = resolve_existing_project_dir(project_id)
+
+    try:
+        archive_buffer = io.BytesIO()
+        with zipfile.ZipFile(
+            archive_buffer,
+            mode="w",
+            compression=zipfile.ZIP_DEFLATED,
+        ) as archive:
+            for file_path, relative_path in iter_project_files(project_dir):
+                archive.write(file_path, arcname=relative_path)
+
+        return Response(
+            content=archive_buffer.getvalue(),
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f'attachment; filename="{project_id}.zip"',
+            },
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to create project download.",
+        ) from None
