@@ -8,3 +8,4 @@ langchain-openai==1.6.2
 langgraph==1.2.11
 anthropic==1.7.0
 openai==3.16.2
+ollama==0.6.2

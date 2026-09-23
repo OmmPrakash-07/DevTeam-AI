@@ -1,5 +1,6 @@
 from pathlib import Path
 import ast
+import re
 import subprocess
 import sys
 
@@ -13,12 +14,12 @@ def normalize_path(file_path: str) -> str:
 
     Removes the generated_project/ prefix if present.
     """
-    file_path = file_path.replace("\\", "/")
+    file_path = str(file_path).replace("\\", "/")
 
     if file_path.startswith("generated_project/"):
         file_path = file_path[len("generated_project/"):]
 
-    return file_path
+    return file_path.strip("/")
 
 
 def is_test_file(file_path: str) -> bool:
@@ -38,49 +39,39 @@ def validate_python_file(path: Path) -> dict:
     Validate Python syntax using AST.
     """
     try:
-        source = path.read_text(
-            encoding="utf-8"
-        )
+        source = path.read_text(encoding="utf-8")
 
         ast.parse(source)
 
         return {
             "status": "passed",
-            "file": str(path)
+            "file": str(path),
         }
 
     except SyntaxError as error:
-
         return {
             "status": "failed",
             "file": str(path),
             "error": (
                 f"SyntaxError: {error.msg} "
                 f"at line {error.lineno}"
-            )
+            ),
         }
 
     except Exception as error:
-
         return {
             "status": "failed",
             "file": str(path),
-            "error": str(error)
+            "error": str(error),
         }
 
 
 def find_external_imports(path: Path) -> list[str]:
     """
-    Find imported modules.
-
-    This is mainly used to detect unnecessary dependencies
-    such as pytest when the project does not require them.
+    Find imported top-level modules.
     """
     try:
-        source = path.read_text(
-            encoding="utf-8"
-        )
-
+        source = path.read_text(encoding="utf-8")
         tree = ast.parse(source)
 
         imports = []
@@ -107,24 +98,81 @@ def find_external_imports(path: Path) -> list[str]:
         return []
 
 
+def parse_unittest_result(output: str) -> dict:
+    """
+    Parse unittest output.
+
+    Returns:
+        {
+            "tests_run": int,
+            "failures": int,
+            "errors": int
+        }
+    """
+    tests_run = 0
+    failures = 0
+    errors = 0
+
+    # Example:
+    # Ran 8 tests in 0.123s
+    match = re.search(
+        r"Ran\s+(\d+)\s+tests?",
+        output,
+        re.IGNORECASE,
+    )
+
+    if match:
+        tests_run = int(match.group(1))
+
+    # Example:
+    # FAILED (failures=1)
+    match = re.search(
+        r"failures=(\d+)",
+        output,
+        re.IGNORECASE,
+    )
+
+    if match:
+        failures = int(match.group(1))
+
+    # Example:
+    # FAILED (errors=1)
+    match = re.search(
+        r"errors=(\d+)",
+        output,
+        re.IGNORECASE,
+    )
+
+    if match:
+        errors = int(match.group(1))
+
+    return {
+        "tests_run": tests_run,
+        "failures": failures,
+        "errors": errors,
+    }
+
+
 def run_test_suite(project_dir: Path) -> dict:
     """
-    Run unittest test discovery inside the project.
+    Run unittest test discovery inside the generated project.
 
-    A project with zero discovered tests is considered failed,
-    because the tester must verify that the generated tests
-    actually execute.
+    Zero discovered tests are considered a tester error because
+    the generated test suite did not actually execute.
     """
+
     tests_dir = project_dir / "tests"
 
     if not tests_dir.exists():
 
         return {
             "status": "failed",
+            "tests_run": 0,
             "passed": 0,
             "failed": 0,
             "errors": 1,
-            "error": "No tests directory found."
+            "output": "",
+            "error": "No tests directory found.",
         }
 
     try:
@@ -137,163 +185,138 @@ def run_test_suite(project_dir: Path) -> dict:
                 "discover",
                 "-s",
                 "tests",
-                "-v"
+                "-v",
             ],
             cwd=project_dir,
             capture_output=True,
             text=True,
-            timeout=20
+            timeout=30,
         )
+
+        stdout = result.stdout.strip()
+        stderr = result.stderr.strip()
 
         output = (
-            result.stdout.strip()
-            + "\n"
-            + result.stderr.strip()
+            stdout
+            + ("\n" if stdout and stderr else "")
+            + stderr
         ).strip()
 
-        # unittest normally reports:
-        # "Ran X tests"
-        tests_run = 0
+        parsed = parse_unittest_result(output)
 
-        import re
+        tests_run = parsed["tests_run"]
+        failures = parsed["failures"]
+        errors_count = parsed["errors"]
 
-        match = re.search(
-            r"Ran\s+(\d+)\s+test",
-            output
-        )
+        # ---------------------------------------------------------
+        # No tests discovered
+        # ---------------------------------------------------------
 
-        if match:
-            tests_run = int(match.group(1))
-
-        # Count failed/error test cases from unittest output.
-        failures = 0
-        errors_count = 0
-
-        failure_match = re.search(
-            r"failures=(\d+)",
-            output
-        )
-
-        error_match = re.search(
-            r"errors=(\d+)",
-            output
-        )
-
-        if failure_match:
-            failures = int(
-                failure_match.group(1)
-            )
-
-        if error_match:
-            errors_count = int(
-                error_match.group(1)
-            )
-
-        # If unittest exits with a non-zero code,
-        # the test suite definitely failed.
-        if result.returncode != 0:
-
-            return {
-                "status": "failed",
-                "passed": max(
-                    0,
-                    tests_run
-                    - failures
-                    - errors_count
-                ),
-                "failed": failures,
-                "errors": max(
-                    1,
-                    errors_count
-                ),
-                "output": output,
-                "error": (
-                    result.stderr.strip()
-                    or result.stdout.strip()
-                    or "Test suite failed."
-                )
-            }
-
-        # IMPORTANT:
-        # Zero tests is NOT considered success.
         if tests_run == 0:
 
             return {
                 "status": "failed",
+                "tests_run": 0,
                 "passed": 0,
                 "failed": 0,
                 "errors": 1,
                 "output": output,
                 "error": (
                     "No tests were discovered. "
-                    "The test suite did not execute any tests."
-                )
+                    "The generated test suite did not execute."
+                ),
             }
 
-        # All tests passed.
-        if failures == 0 and errors_count == 0:
+        # ---------------------------------------------------------
+        # Calculate actual passed test cases
+        # ---------------------------------------------------------
+
+        passed = max(
+            0,
+            tests_run - failures - errors_count,
+        )
+
+        # ---------------------------------------------------------
+        # All tests passed
+        # ---------------------------------------------------------
+
+        if (
+            result.returncode == 0
+            and failures == 0
+            and errors_count == 0
+        ):
 
             return {
                 "status": "passed",
-                "passed": tests_run,
+                "tests_run": tests_run,
+                "passed": passed,
                 "failed": 0,
                 "errors": 0,
-                "output": output
+                "output": output,
             }
+
+        # ---------------------------------------------------------
+        # Tests executed but one or more failed
+        # ---------------------------------------------------------
 
         return {
             "status": "failed",
-            "passed": max(
-                0,
-                tests_run
-                - failures
-                - errors_count
-            ),
+            "tests_run": tests_run,
+            "passed": passed,
             "failed": failures,
             "errors": errors_count,
             "output": output,
-            "error": "One or more tests failed."
+            "error": (
+                "One or more unittest test cases failed."
+                if failures > 0
+                else "One or more unittest test cases produced errors."
+            ),
         }
 
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as error:
 
         return {
             "status": "failed",
+            "tests_run": 0,
             "passed": 0,
-            "failed": 1,
+            "failed": 0,
             "errors": 1,
-            "error": "Test suite timed out."
+            "output": "",
+            "error": "Test suite timed out after 30 seconds.",
         }
 
     except Exception as error:
 
         return {
             "status": "failed",
+            "tests_run": 0,
             "passed": 0,
-            "failed": 1,
+            "failed": 0,
             "errors": 1,
-            "error": str(error)
+            "output": "",
+            "error": str(error),
         }
 
 
 def run_python_file(
     path: Path,
-    project_dir: Path
+    project_dir: Path,
 ) -> dict:
     """
     Run a non-interactive Python file.
     """
+
     try:
 
         result = subprocess.run(
             [
                 sys.executable,
-                str(path)
+                str(path),
             ],
             cwd=project_dir,
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=10,
         )
 
         if result.returncode == 0:
@@ -301,7 +324,7 @@ def run_python_file(
             return {
                 "status": "passed",
                 "file": str(path),
-                "output": result.stdout.strip()
+                "output": result.stdout.strip(),
             }
 
         return {
@@ -311,7 +334,7 @@ def run_python_file(
                 result.stderr.strip()
                 or result.stdout.strip()
                 or "Python file execution failed."
-            )
+            ),
         }
 
     except subprocess.TimeoutExpired:
@@ -322,7 +345,7 @@ def run_python_file(
             "error": (
                 "Execution timed out. "
                 "File may be interactive."
-            )
+            ),
         }
 
     except Exception as error:
@@ -330,68 +353,46 @@ def run_python_file(
         return {
             "status": "failed",
             "file": str(path),
-            "error": str(error)
+            "error": str(error),
         }
 
 
-def tester_agent(state: ProjectState):
+def collect_project_files(
+    generated_files: list,
+    tasks: list,
+) -> list[str]:
+    """
+    Collect, normalize and deduplicate generated files.
+    """
 
-    project_id = state.get("project_id")
-
-    if not project_id:
-
-        error = "Project ID is missing from project state."
-
-        return {
-            **state,
-            "test_results": {
-                "status": "failed",
-                "total_files": 0,
-                "passed": 0,
-                "failed": 1,
-                "errors": [error],
-                "execution_results": []
-            },
-            "errors": [error]
-        }
-
-    # Get the isolated project directory.
-    project_dir = get_project_dir(project_id)
-
-    generated_files = state.get(
-        "generated_files",
-        []
-    )
-
-    tasks = state.get(
-        "tasks",
-        []
-    )
-
-    # Collect files from generated_files and tasks.
     all_files = []
 
     for file_path in generated_files:
 
         if file_path:
-            all_files.append(file_path)
+            all_files.append(
+                str(file_path)
+            )
 
     for task in tasks:
+
+        if not isinstance(task, dict):
+            continue
 
         file_path = task.get("path")
 
         if file_path:
-            all_files.append(file_path)
+            all_files.append(
+                str(file_path)
+            )
 
-    # Normalize and remove duplicates.
     unique_files = []
-
     seen = set()
 
     for file_path in all_files:
 
         normalized = normalize_path(
-            str(file_path)
+            file_path
         )
 
         if not normalized:
@@ -401,8 +402,95 @@ def tester_agent(state: ProjectState):
             continue
 
         seen.add(normalized)
-
         unique_files.append(normalized)
+
+    return unique_files
+
+
+def is_interactive_python_file(
+    path: Path,
+) -> bool:
+    """
+    Detect Python programs that require user interaction.
+    """
+
+    try:
+
+        source = path.read_text(
+            encoding="utf-8"
+        )
+
+        interactive_markers = [
+            "input(",
+            "getpass(",
+        ]
+
+        return any(
+            marker in source
+            for marker in interactive_markers
+        )
+
+    except Exception:
+        return False
+
+
+def tester_agent(state: ProjectState):
+
+    project_id = state.get("project_id")
+
+    if not project_id:
+
+        error = (
+            "Project ID is missing from project state."
+        )
+
+        return {
+            **state,
+            "test_results": {
+                "status": "failed",
+                "total_files": 0,
+                "passed": 0,
+                "failed": 1,
+                "errors": [error],
+                "execution_results": [],
+                "test_suite": {
+                    "status": "failed",
+                    "tests_run": 0,
+                    "passed": 0,
+                    "failed": 0,
+                    "errors": 1,
+                    "error": error,
+                },
+            },
+            "errors": [error],
+        }
+
+    # -------------------------------------------------------------
+    # Project directory
+    # -------------------------------------------------------------
+
+    project_dir = get_project_dir(
+        project_id
+    )
+
+    generated_files = state.get(
+        "generated_files",
+        [],
+    )
+
+    tasks = state.get(
+        "tasks",
+        [],
+    )
+
+    # -------------------------------------------------------------
+    # Collect files
+    # -------------------------------------------------------------
+
+    unique_files = collect_project_files(
+        generated_files,
+        tasks,
+    )
 
     syntax_results = []
     execution_results = []
@@ -410,7 +498,10 @@ def tester_agent(state: ProjectState):
 
     python_files = []
 
-    # Validate generated Python files.
+    # -------------------------------------------------------------
+    # Validate Python files
+    # -------------------------------------------------------------
+
     for file_path in unique_files:
 
         path = project_dir / file_path
@@ -445,7 +536,10 @@ def tester_agent(state: ProjectState):
                 f"{syntax_result.get('error', 'Syntax error')}"
             )
 
-    # Detect unnecessary pytest dependency.
+    # -------------------------------------------------------------
+    # Detect pytest imports
+    # -------------------------------------------------------------
+
     pytest_detected = []
 
     for file_path in python_files:
@@ -467,21 +561,32 @@ def tester_agent(state: ProjectState):
                 f"Use unittest unless pytest is explicitly required."
             )
 
-    # Run unittest suite.
+    # -------------------------------------------------------------
+    # Run unittest suite
+    # -------------------------------------------------------------
+
     test_suite_result = run_test_suite(
         project_dir
     )
 
+    # Do NOT duplicate the complete unittest error
+    # into the top-level errors list if it is already
+    # represented by failed/error counters.
     if test_suite_result["status"] != "passed":
 
-        errors.append(
-            test_suite_result.get(
-                "error",
-                "Test suite failed."
-            )
+        test_suite_error = test_suite_result.get(
+            "error"
         )
 
-    # Run non-test Python files.
+        if test_suite_error:
+            errors.append(
+                f"Test suite: {test_suite_error}"
+            )
+
+    # -------------------------------------------------------------
+    # Run non-test Python files
+    # -------------------------------------------------------------
+
     for file_path in python_files:
 
         if is_test_file(file_path):
@@ -489,37 +594,22 @@ def tester_agent(state: ProjectState):
 
         path = project_dir / file_path
 
-        # Skip obvious interactive CLI programs.
-        try:
+        # Skip interactive programs.
+        if is_interactive_python_file(path):
 
-            source = path.read_text(
-                encoding="utf-8"
-            )
+            execution_results.append({
+                "status": "skipped",
+                "file": file_path,
+                "reason": (
+                    "Interactive CLI program."
+                ),
+            })
 
-            interactive_markers = [
-                "input(",
-                "getpass("
-            ]
-
-            if any(
-                marker in source
-                for marker in interactive_markers
-            ):
-
-                execution_results.append({
-                    "status": "skipped",
-                    "file": file_path,
-                    "reason": "Interactive CLI program."
-                })
-
-                continue
-
-        except Exception:
-            pass
+            continue
 
         result = run_python_file(
             path,
-            project_dir
+            project_dir,
         )
 
         result["file"] = file_path
@@ -535,11 +625,19 @@ def tester_agent(state: ProjectState):
                 f"{result.get('error', 'Execution failed')}"
             )
 
+    # -------------------------------------------------------------
+    # Syntax failures
+    # -------------------------------------------------------------
+
     syntax_failed = sum(
         1
         for result in syntax_results
         if result["status"] == "failed"
     )
+
+    # -------------------------------------------------------------
+    # Runtime execution failures
+    # -------------------------------------------------------------
 
     execution_failed = sum(
         1
@@ -547,37 +645,73 @@ def tester_agent(state: ProjectState):
         if result["status"] == "failed"
     )
 
-    # Overall tester status.
+    # -------------------------------------------------------------
+    # Test-case statistics
+    # -------------------------------------------------------------
+
+    test_cases_run = test_suite_result.get(
+        "tests_run",
+        0,
+    )
+
+    test_cases_passed = test_suite_result.get(
+        "passed",
+        0,
+    )
+
+    test_cases_failed = test_suite_result.get(
+        "failed",
+        0,
+    )
+
+    test_cases_errors = test_suite_result.get(
+        "errors",
+        0,
+    )
+
+    # -------------------------------------------------------------
+    # Overall status
+    # -------------------------------------------------------------
+
+    overall_status = "passed"
+
     if errors:
-
         overall_status = "failed"
 
-    elif test_suite_result["status"] == "passed":
-
-        overall_status = "passed"
-
-    else:
-
+    if test_suite_result["status"] != "passed":
         overall_status = "failed"
+
+    if syntax_failed > 0:
+        overall_status = "failed"
+
+    if execution_failed > 0:
+        overall_status = "failed"
+
+    # -------------------------------------------------------------
+    # File statistics
+    # -------------------------------------------------------------
 
     total_files = len(unique_files)
-
-    passed_files = max(
-        0,
-        total_files
-        - syntax_failed
-        - execution_failed
-    )
 
     failed_files = (
         syntax_failed
         + execution_failed
     )
 
+    passed_files = max(
+        0,
+        total_files - failed_files,
+    )
+
+    # -------------------------------------------------------------
+    # Final result
+    # -------------------------------------------------------------
+
     return {
         **state,
 
         "test_results": {
+
             "status": overall_status,
 
             "project_id": project_id,
@@ -586,22 +720,30 @@ def tester_agent(state: ProjectState):
                 project_dir
             ),
 
+            # File-level statistics
             "total_files": total_files,
-
             "passed": passed_files,
-
             "failed": failed_files,
 
+            # Test-case statistics
+            "tests_run": test_cases_run,
+            "tests_passed": test_cases_passed,
+            "tests_failed": test_cases_failed,
+            "test_errors": test_cases_errors,
+
+            # Detailed tester errors
             "errors": errors,
 
+            # Detailed results
             "syntax_results": syntax_results,
-
             "execution_results": execution_results,
 
+            # unittest information
             "test_suite": test_suite_result,
 
-            "pytest_detected": pytest_detected
+            # Dependency check
+            "pytest_detected": pytest_detected,
         },
 
-        "errors": errors
+        "errors": errors,
     }

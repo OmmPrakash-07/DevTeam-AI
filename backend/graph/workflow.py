@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from langgraph.graph import (
     StateGraph,
     START,
@@ -13,6 +15,91 @@ from agents.tester import tester_agent
 from agents.debugger import debugger_agent
 from agents.code_reviewer import code_reviewer_agent
 from agents.documentation import documentation_agent
+
+
+AGENT_DETAILS = {
+    "project_manager": ("Project Manager", "Project Manager is working..."),
+    "architect": ("Architect", "Architect is designing the project..."),
+    "developer": ("Developer", "Developer is generating the project code..."),
+    "filesystem": ("File System", "File System is creating project files..."),
+    "tester": ("Tester", "Tester is validating the project..."),
+    "debugger": ("Debugger", "Debugger is analyzing and fixing failures..."),
+    "code_reviewer": ("Code Reviewer", "Code Reviewer is reviewing the project..."),
+    "documentation": ("Documentation", "Documentation is being generated..."),
+}
+
+
+def _timestamp() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _record_activity(state: ProjectState, event: dict) -> None:
+    """Append an activity event to the current state history."""
+    history = state.setdefault("activity_history", [])
+    history.append(event)
+
+
+def _with_activity(agent_name: str, agent):
+    """Wrap a workflow node with running, completion, and failure events."""
+    display_name, running_message = AGENT_DETAILS[agent_name]
+
+    def tracked_agent(state: ProjectState) -> ProjectState:
+        attempt_number = None
+        if agent_name == "debugger":
+            attempt_number = state.get("debug_attempts", 0) + 1
+        elif agent_name == "tester":
+            attempt_number = state.get("debug_attempts", 0) + 1
+
+        event_fields = {
+            "agent_name": agent_name,
+            "display_name": display_name,
+        }
+        if attempt_number is not None:
+            event_fields["attempt_number"] = attempt_number
+
+        running_event = {
+            **event_fields,
+            "status": "running",
+            "message": running_message,
+            "timestamp": _timestamp(),
+        }
+        _record_activity(state, running_event)
+        state["current_active_agent"] = agent_name
+
+        try:
+            result = agent(state)
+        except Exception as error:
+            _record_activity(state, {
+                **event_fields,
+                "status": "failed",
+                "message": f"{display_name} failed: {error}",
+                "timestamp": _timestamp(),
+            })
+            state["current_active_agent"] = None
+            raise
+
+        result = {**state, **result}
+        completion_status = "completed"
+        completion_message = f"{display_name} completed successfully."
+
+        if agent_name == "tester":
+            test_status = result.get("test_results", {}).get("status")
+            if test_status == "failed":
+                completion_status = "failed"
+                completion_message = "Tester completed; project tests failed."
+            else:
+                completion_message = "Tester completed; project tests passed."
+
+        result.setdefault("activity_history", []).append({
+            **event_fields,
+            "status": completion_status,
+            "message": completion_message,
+            "timestamp": _timestamp(),
+        })
+        result["current_active_agent"] = None
+        return result
+
+    return tracked_agent
 
 
 # ============================================================
@@ -71,42 +158,42 @@ def create_workflow():
 
     graph.add_node(
         "project_manager",
-        project_manager_agent
+        _with_activity("project_manager", project_manager_agent)
     )
 
     graph.add_node(
         "architect",
-        architect_agent
+        _with_activity("architect", architect_agent)
     )
 
     graph.add_node(
         "developer",
-        developer_agent
+        _with_activity("developer", developer_agent)
     )
 
     graph.add_node(
         "filesystem",
-        filesystem_agent
+        _with_activity("filesystem", filesystem_agent)
     )
 
     graph.add_node(
         "tester",
-        tester_agent
+        _with_activity("tester", tester_agent)
     )
 
     graph.add_node(
         "debugger",
-        debugger_agent
+        _with_activity("debugger", debugger_agent)
     )
 
     graph.add_node(
         "code_reviewer",
-        code_reviewer_agent
+        _with_activity("code_reviewer", code_reviewer_agent)
     )
 
     graph.add_node(
         "documentation",
-        documentation_agent
+        _with_activity("documentation", documentation_agent)
     )
 
     # ========================================================

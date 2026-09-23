@@ -46,6 +46,117 @@ const stages = [
   },
 ];
 
+const activityStatusStyles = {
+  completed: {
+    icon: "✓",
+    label: "Completed",
+    className: "border-emerald-400/20 bg-emerald-400/10 text-emerald-300",
+  },
+  running: {
+    icon: "◌",
+    label: "Running",
+    className: "border-blue-400/20 bg-blue-400/10 text-blue-300",
+  },
+  failed: {
+    icon: "✕",
+    label: "Failed",
+    className: "border-red-400/20 bg-red-400/10 text-red-300",
+  },
+  pending: {
+    icon: "·",
+    label: "Pending",
+    className: "border-white/5 bg-slate-950/40 text-slate-500",
+  },
+};
+
+function getActivityLabel(event) {
+  const name = event.display_name ||
+    stages.find((stage) => stage.id === event.agent_name)?.name ||
+    event.agent_name ||
+    "Agent";
+
+  return event.attempt_number != null
+    ? `${name} — Attempt ${event.attempt_number}`
+    : name;
+}
+
+function LiveAgentActivity({ activityHistory = [], currentActiveAgent }) {
+  const latestByAgent = {};
+  activityHistory.forEach((event) => {
+    if (event?.agent_name) latestByAgent[event.agent_name] = event;
+  });
+
+  const activeStage = stages.find((stage) => stage.id === currentActiveAgent);
+  const activeName = activeStage?.name || currentActiveAgent;
+
+  return (
+    <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5 sm:p-6">
+      <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-widest text-blue-400">
+            Workflow Activity
+          </p>
+          <h3 className="mt-1 text-xl font-bold">Live Agent Activity</h3>
+        </div>
+        {activeName && (
+          <p className="text-xs text-blue-300">
+            Current agent: <span className="font-semibold">{activeName}</span>
+          </p>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {stages.map((stage) => {
+          const event = latestByAgent[stage.id];
+          const status = activityStatusStyles[event?.status] ? event.status : "pending";
+          const style = activityStatusStyles[status];
+          return (
+            <div key={stage.id} className={`rounded-xl border p-3 ${style.className}`}>
+              <div className="flex items-center gap-2">
+                <span className="text-lg" aria-label={style.label}>{style.icon}</span>
+                <span className="text-xs font-medium">{stage.name}</span>
+              </div>
+              <p className="mt-1 text-[10px] opacity-75">{style.label}</p>
+            </div>
+          );
+        })}
+      </div>
+
+      {activityHistory.length > 0 ? (
+        <ol className="mt-5 space-y-2">
+          {activityHistory.map((event, index) => {
+            const status = activityStatusStyles[event?.status] ? event.status : "pending";
+            const style = activityStatusStyles[status];
+            return (
+              <li key={`${event.agent_name || "activity"}-${event.timestamp || index}-${index}`}
+                className="flex items-start gap-3 rounded-lg bg-slate-950/50 px-3 py-2.5">
+                <span className={`mt-0.5 w-5 shrink-0 text-center ${style.className.split(" ").at(-1)}`}>
+                  {style.icon}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-medium text-slate-200">
+                    {getActivityLabel(event)}
+                  </p>
+                  {event.message && (
+                    <p className="mt-1 break-words text-xs leading-5 text-slate-400">
+                      {event.message}
+                    </p>
+                  )}
+                </div>
+                <span className="shrink-0 text-[10px] text-slate-500">{style.label}</span>
+              </li>
+            );
+          })}
+        </ol>
+      ) : (
+        <p className="mt-4 text-xs text-slate-500">
+          No agent activity history was returned for this project.
+        </p>
+      )}
+    </section>
+  );
+}
+
 function App() {
   const [request, setRequest] = useState("");
   const [loading, setLoading] = useState(false);
@@ -308,6 +419,9 @@ function ProjectResult({ response, onReset }) {
   const testResults = response.test_results || {};
   const testSuite = testResults.test_suite || {};
   const review = response.review || {};
+  const activityHistory = Array.isArray(response.activity_history)
+    ? response.activity_history
+    : [];
 
   return (
     <section className="mt-12 space-y-6">
@@ -351,6 +465,11 @@ function ProjectResult({ response, onReset }) {
         </div>
 
       </div>
+
+      <LiveAgentActivity
+        activityHistory={activityHistory}
+        currentActiveAgent={response.current_active_agent}
+      />
 
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">

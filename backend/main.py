@@ -127,5 +127,14 @@ def generate_project(request: dict):
         "debug_attempts": result.get(
             "debug_attempts",
             0
+        ),
+
+        "activity_history": result.get(
+            "activity_history",
+            []
+        ),
+
+        "current_active_agent": result.get(
+            "current_active_agent"
         )
     }
