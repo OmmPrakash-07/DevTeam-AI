@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 
-const API_URL =
-  import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
 const buttonStyles = {
-  primary: "rounded-xl bg-blue-500 font-semibold text-white shadow-lg shadow-blue-500/20 transition hover:bg-blue-400 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 disabled:cursor-not-allowed disabled:opacity-50",
-  secondary: "rounded-xl border border-blue-300/25 bg-blue-400/10 font-semibold text-blue-200 transition hover:bg-blue-400/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 disabled:cursor-wait disabled:opacity-60",
-  ghost: "rounded-xl border border-white/10 text-slate-300 transition hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 disabled:cursor-not-allowed disabled:opacity-50",
-  danger: "rounded-xl border border-red-400/25 bg-red-400/10 font-semibold text-red-200 transition hover:bg-red-400/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 disabled:cursor-not-allowed disabled:opacity-50",
+  primary:
+    "rounded-xl bg-blue-500 font-semibold text-white shadow-lg shadow-blue-500/20 transition hover:bg-blue-400 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 disabled:cursor-not-allowed disabled:opacity-50",
+  secondary:
+    "rounded-xl border border-blue-300/25 bg-blue-400/10 font-semibold text-blue-200 transition hover:bg-blue-400/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 disabled:cursor-wait disabled:opacity-60",
+  ghost:
+    "rounded-xl border border-white/10 text-slate-300 transition hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 disabled:cursor-not-allowed disabled:opacity-50",
+  danger:
+    "rounded-xl border border-red-400/25 bg-red-400/10 font-semibold text-red-200 transition hover:bg-red-400/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 disabled:cursor-not-allowed disabled:opacity-50",
 };
 
 function isHiddenProjectFile(path) {
@@ -22,58 +25,83 @@ function buildProjectNavigatorEntries(files) {
   const entries = [];
   const addedFolders = new Set();
 
-  files.filter((file) => !isHiddenProjectFile(file.path)).forEach((file) => {
-    const normalizedPath = String(file.path || "").replace(/\\/g, "/");
-    const segments = normalizedPath.split("/").filter(Boolean);
+  files
+    .filter((file) => !isHiddenProjectFile(file.path))
+    .forEach((file) => {
+      const normalizedPath = String(file.path || "").replace(/\\/g, "/");
+      const segments = normalizedPath.split("/").filter(Boolean);
 
-    segments.slice(0, -1).forEach((segment, index) => {
-      const folderPath = segments.slice(0, index + 1).join("/");
-      if (!addedFolders.has(folderPath)) {
-        addedFolders.add(folderPath);
-        entries.push({
-          type: "folder",
-          path: folderPath,
-          name: segment,
-          depth: index,
-        });
-      }
-    });
+      segments.slice(0, -1).forEach((segment, index) => {
+        const folderPath = segments.slice(0, index + 1).join("/");
+        if (!addedFolders.has(folderPath)) {
+          addedFolders.add(folderPath);
+          entries.push({
+            type: "folder",
+            path: folderPath,
+            name: segment,
+            depth: index,
+          });
+        }
+      });
 
-    entries.push({
-      type: "file",
-      path: file.path,
-      name: segments[segments.length - 1] || file.path,
-      depth: Math.max(segments.length - 1, 0),
-      file,
+      entries.push({
+        type: "file",
+        path: file.path,
+        name: segments[segments.length - 1] || file.path,
+        depth: Math.max(segments.length - 1, 0),
+        file,
+      });
     });
-  });
 
   return entries;
 }
 
 function FileIcon({ className = "h-4 w-4" }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
-      <path strokeLinecap="round" strokeLinejoin="round" d="M14 3v6h6M8 13h8M8 17h8" />
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      aria-hidden="true"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"
+      />
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M14 3v6h6M8 13h8M8 17h8"
+      />
     </svg>
   );
 }
 
 function FolderIcon({ className = "h-4 w-4" }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M3 6.5A1.5 1.5 0 0 1 4.5 5H10l2 2h7.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z" />
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      aria-hidden="true"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M3 6.5A1.5 1.5 0 0 1 4.5 5H10l2 2h7.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"
+      />
       <path strokeLinecap="round" strokeLinejoin="round" d="M3 9h18" />
     </svg>
   );
 }
 
 function apiEndpoint(path) {
-  return new URL(
-    `${API_URL.replace(/\/+$/, "")}${path}`,
-    window.location.href
-  );
+  return new URL(`${API_URL.replace(/\/+$/, "")}${path}`, window.location.href);
 }
 
 async function fetchRecentProjects(signal) {
@@ -81,7 +109,8 @@ async function fetchRecentProjects(signal) {
   if (!response.ok) throw new Error("Recent projects could not be loaded.");
 
   const data = await response.json();
-  if (!Array.isArray(data.projects)) throw new Error("Recent projects response was invalid.");
+  if (!Array.isArray(data.projects))
+    throw new Error("Recent projects response was invalid.");
   return data.projects;
 }
 
@@ -90,15 +119,17 @@ function formatProjectDate(value) {
   return Number.isNaN(date.getTime())
     ? "Date unavailable"
     : date.toLocaleDateString(undefined, {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-  });
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
 }
 
 function formatProjectStatus(value) {
   if (!value) return "Not available";
-  return value.replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+  return value
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 const stages = [
@@ -171,7 +202,7 @@ const navigationItems = [
   { id: "home", label: "Home", icon: "home" },
   { id: "new-project", label: "New Project", icon: "plus" },
   { id: "my-projects", label: "My Projects", icon: "folder" },
-  { id: "project-history", label: "Project History", icon: "history" },
+  { id: "history", label: "History", icon: "history" },
   { id: "settings", label: "Settings", icon: "settings" },
 ];
 
@@ -187,9 +218,20 @@ function DevTeamLogo({ className = "h-11 w-11" }) {
 
 function HamburgerIcon({ open }) {
   return (
-    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+    <svg
+      className="h-5 w-5"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      aria-hidden="true"
+    >
       <path d={open ? "M6 6l12 12" : "M4 6h16"} />
-      <path d="M4 12h16" className={`transition-opacity duration-200 ${open ? "opacity-0" : "opacity-100"}`} />
+      <path
+        d="M4 12h16"
+        className={`transition-opacity duration-200 ${open ? "opacity-0" : "opacity-100"}`}
+      />
       <path d={open ? "M6 18L18 6" : "M4 18h16"} />
     </svg>
   );
@@ -197,7 +239,16 @@ function HamburgerIcon({ open }) {
 
 function SettingsIcon() {
   return (
-    <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg
+      className="h-5 w-5 shrink-0"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       <path d="M10.3 2.8h3.4l.5 2a7.6 7.6 0 0 1 1.6.9l1.9-.8 1.7 3-1.5 1.4a7.7 7.7 0 0 1 0 1.9l1.5 1.4-1.7 3-1.9-.8a7.6 7.6 0 0 1-1.6.9l-.5 2h-3.4l-.5-2a7.6 7.6 0 0 1-1.6-.9l-1.9.8-1.7-3 1.5-1.4a7.7 7.7 0 0 1 0-1.9L4.6 7.9l1.7-3 1.9.8a7.6 7.6 0 0 1 1.6-.9z" />
       <circle cx="12" cy="12" r="2.75" />
     </svg>
@@ -219,16 +270,35 @@ function NavigationIcon({ name }) {
   };
 
   if (name === "home") {
-    return <svg {...common}><path d="m3 10 9-7 9 7" /><path d="M5 9v11h14V9M9 20v-6h6v6" /></svg>;
+    return (
+      <svg {...common}>
+        <path d="m3 10 9-7 9 7" />
+        <path d="M5 9v11h14V9M9 20v-6h6v6" />
+      </svg>
+    );
   }
   if (name === "plus") {
-    return <svg {...common}><path d="M12 5v14M5 12h14" /></svg>;
+    return (
+      <svg {...common}>
+        <path d="M12 5v14M5 12h14" />
+      </svg>
+    );
   }
   if (name === "folder") {
-    return <svg {...common}><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H10l2 2h7.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z" /><path d="M3 9h18" /></svg>;
+    return (
+      <svg {...common}>
+        <path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H10l2 2h7.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z" />
+        <path d="M3 9h18" />
+      </svg>
+    );
   }
   if (name === "history") {
-    return <svg {...common}><path d="M3 12a9 9 0 1 0 2.6-6.4L3 8" /><path d="M3 4v4h4M12 7v5l3 2" /></svg>;
+    return (
+      <svg {...common}>
+        <path d="M3 12a9 9 0 1 0 2.6-6.4L3 8" />
+        <path d="M3 4v4h4M12 7v5l3 2" />
+      </svg>
+    );
   }
   return null;
 }
@@ -268,8 +338,12 @@ function Sidebar({ open, activeItem, onNavigate, settingsMessage }) {
         <div className="flex items-center gap-3 border-b border-white/10 pb-6">
           <DevTeamLogo />
           <div className="min-w-0">
-            <h2 className="font-bold tracking-tight text-slate-100">DevTeam AI</h2>
-            <p className="mt-1 text-xs leading-5 text-slate-400">Your AI Software Development Team</p>
+            <h2 className="font-bold tracking-tight text-slate-100">
+              DevTeam AI
+            </h2>
+            <p className="mt-1 text-xs leading-5 text-slate-400">
+              Your AI Software Development Team
+            </p>
           </div>
         </div>
 
@@ -285,7 +359,10 @@ function Sidebar({ open, activeItem, onNavigate, settingsMessage }) {
         </nav>
 
         {settingsMessage && (
-          <p role="status" className="mt-4 rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2.5 text-xs leading-5 text-slate-400">
+          <p
+            role="status"
+            className="mt-4 rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2.5 text-xs leading-5 text-slate-400"
+          >
             {settingsMessage}
           </p>
         )}
@@ -302,7 +379,8 @@ function Sidebar({ open, activeItem, onNavigate, settingsMessage }) {
 }
 
 function getActivityLabel(event) {
-  const name = event.display_name ||
+  const name =
+    event.display_name ||
     stages.find((stage) => stage.id === event.agent_name)?.name ||
     event.agent_name ||
     "Agent";
@@ -340,12 +418,19 @@ function LiveAgentActivity({ activityHistory = [], currentActiveAgent }) {
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {stages.map((stage) => {
           const event = latestByAgent[stage.id];
-          const status = activityStatusStyles[event?.status] ? event.status : "pending";
+          const status = activityStatusStyles[event?.status]
+            ? event.status
+            : "pending";
           const style = activityStatusStyles[status];
           return (
-            <div key={stage.id} className={`rounded-xl border p-3 ${style.className}`}>
+            <div
+              key={stage.id}
+              className={`rounded-xl border p-3 ${style.className}`}
+            >
               <div className="flex items-center gap-2">
-                <span className="text-lg" aria-label={style.label}>{style.icon}</span>
+                <span className="text-lg" aria-label={style.label}>
+                  {style.icon}
+                </span>
                 <span className="text-xs font-medium">{stage.name}</span>
               </div>
               <p className="mt-1 text-[10px] opacity-75">{style.label}</p>
@@ -357,12 +442,18 @@ function LiveAgentActivity({ activityHistory = [], currentActiveAgent }) {
       {activityHistory.length > 0 ? (
         <ol className="mt-5 space-y-2">
           {activityHistory.map((event, index) => {
-            const status = activityStatusStyles[event?.status] ? event.status : "pending";
+            const status = activityStatusStyles[event?.status]
+              ? event.status
+              : "pending";
             const style = activityStatusStyles[status];
             return (
-              <li key={`${event.agent_name || "activity"}-${event.timestamp || index}-${index}`}
-                className="flex items-start gap-3 rounded-lg bg-slate-950/50 px-3 py-2.5">
-                <span className={`mt-0.5 w-5 shrink-0 text-center ${style.className.split(" ").at(-1)}`}>
+              <li
+                key={`${event.agent_name || "activity"}-${event.timestamp || index}-${index}`}
+                className="flex items-start gap-3 rounded-lg bg-slate-950/50 px-3 py-2.5"
+              >
+                <span
+                  className={`mt-0.5 w-5 shrink-0 text-center ${style.className.split(" ").at(-1)}`}
+                >
                   {style.icon}
                 </span>
                 <div className="min-w-0 flex-1">
@@ -375,7 +466,9 @@ function LiveAgentActivity({ activityHistory = [], currentActiveAgent }) {
                     </p>
                   )}
                 </div>
-                <span className="shrink-0 text-[10px] text-slate-500">{style.label}</span>
+                <span className="shrink-0 text-[10px] text-slate-500">
+                  {style.label}
+                </span>
               </li>
             );
           })}
@@ -416,12 +509,15 @@ function App() {
   const recentProjectsRequestRef = useRef(0);
   const recentProjectsRefreshRef = useRef(null);
 
-  useEffect(() => () => {
-    eventSourceRef.current?.close();
-    eventSourceRef.current = null;
-    recentProjectsRefreshRef.current?.abort();
-    recentProjectsRefreshRef.current = null;
-  }, []);
+  useEffect(
+    () => () => {
+      eventSourceRef.current?.close();
+      eventSourceRef.current = null;
+      recentProjectsRefreshRef.current?.abort();
+      recentProjectsRefreshRef.current = null;
+    },
+    [],
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -436,8 +532,14 @@ function App() {
         }
       })
       .catch(() => {
-        if (active && recentProjectsRequestRef.current === requestId && !controller.signal.aborted) {
-          setRecentProjectsError("Recent projects are temporarily unavailable.");
+        if (
+          active &&
+          recentProjectsRequestRef.current === requestId &&
+          !controller.signal.aborted
+        ) {
+          setRecentProjectsError(
+            "Recent projects are temporarily unavailable.",
+          );
         }
       })
       .finally(() => {
@@ -474,22 +576,48 @@ function App() {
     }
 
     setActiveNavigationItem(destination);
+    setSettingsMessage("");
+
     if (destination === "settings") {
       setSettingsMessage("Settings are not available yet.");
       setSidebarOpen(true);
       return;
     }
 
-    setSettingsMessage("");
     setSidebarOpen(false);
 
     if (destination === "home") {
-      homeSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    } else if (destination === "new-project") {
-      requestSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-      requestInputRef.current?.focus({ preventScroll: true });
-    } else if (destination === "my-projects" || destination === "project-history") {
-      recentProjectsSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      homeSectionRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+      return;
+    }
+
+    if (destination === "new-project") {
+      requestSectionRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+
+      requestInputRef.current?.focus({
+        preventScroll: true,
+      });
+
+      return;
+    }
+
+    if (destination === "my-projects") {
+      recentProjectsSectionRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+
+      return;
+    }
+
+    if (destination === "history") {
+      return;
     }
   };
 
@@ -505,11 +633,17 @@ function App() {
         setRecentProjectsError("");
       }
     } catch {
-      if (recentProjectsRequestRef.current === requestId && !controller.signal.aborted) {
+      if (
+        recentProjectsRequestRef.current === requestId &&
+        !controller.signal.aborted
+      ) {
         setRecentProjectsError("Recent projects are temporarily unavailable.");
       }
     } finally {
-      if (!controller.signal.aborted && recentProjectsRequestRef.current === requestId) {
+      if (
+        !controller.signal.aborted &&
+        recentProjectsRequestRef.current === requestId
+      ) {
         setRecentProjectsLoading(false);
       }
       if (recentProjectsRefreshRef.current === controller) {
@@ -557,7 +691,9 @@ function App() {
         if (eventSourceRef.current !== eventSource) return;
         try {
           const data = JSON.parse(event.data);
-          if (["ANSWER", "CODING_HELP", "BUILD_PROJECT"].includes(data.intent)) {
+          if (
+            ["ANSWER", "CODING_HELP", "BUILD_PROJECT"].includes(data.intent)
+          ) {
             setGenerationIntent(data.intent);
           }
         } catch {
@@ -586,7 +722,7 @@ function App() {
             setCurrentActiveAgent(activity.agent_name || null);
           } else if (["completed", "failed"].includes(activity.status)) {
             setCurrentActiveAgent((current) =>
-              current === activity.agent_name ? null : current
+              current === activity.agent_name ? null : current,
             );
           }
         } catch {
@@ -602,11 +738,17 @@ function App() {
           const data = JSON.parse(event.data);
           setGenerationIntent("BUILD_PROJECT");
           setAssistantResponse(null);
-          const finalHistory = Array.isArray(data.activity_history) &&
-            data.activity_history.every((item) => item && typeof item === "object");
+          const finalHistory =
+            Array.isArray(data.activity_history) &&
+            data.activity_history.every(
+              (item) => item && typeof item === "object",
+            );
 
           setActivityHistory((previous) => {
-            if (!finalHistory || data.activity_history.length < previous.length) {
+            if (
+              !finalHistory ||
+              data.activity_history.length < previous.length
+            ) {
               return previous;
             }
             return data.activity_history;
@@ -616,7 +758,9 @@ function App() {
           setLoading(false);
           refreshRecentProjects();
         } catch {
-          setError("The generation finished, but its response could not be read.");
+          setError(
+            "The generation finished, but its response could not be read.",
+          );
           setLoading(false);
         } finally {
           closeStream();
@@ -629,7 +773,10 @@ function App() {
 
         try {
           const data = JSON.parse(event.data);
-          if (!["ANSWER", "CODING_HELP"].includes(data.intent) || typeof data.answer !== "string") {
+          if (
+            !["ANSWER", "CODING_HELP"].includes(data.intent) ||
+            typeof data.answer !== "string"
+          ) {
             throw new Error("Invalid assistant response.");
           }
           setGenerationIntent(data.intent);
@@ -687,12 +834,14 @@ function App() {
 
     try {
       const downloadUrl = apiEndpoint(
-        `/projects/${encodeURIComponent(projectId)}/download`
+        `/projects/${encodeURIComponent(projectId)}/download`,
       );
       const downloadResponse = await fetch(downloadUrl);
       if (!downloadResponse.ok) throw new Error("Download failed.");
 
-      const objectUrl = window.URL.createObjectURL(await downloadResponse.blob());
+      const objectUrl = window.URL.createObjectURL(
+        await downloadResponse.blob(),
+      );
       const link = document.createElement("a");
       link.href = objectUrl;
       link.download = `${projectId}.zip`;
@@ -701,7 +850,9 @@ function App() {
       link.remove();
       window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 1000);
     } catch {
-      setProjectActionError("Unable to download this project. Please try again.");
+      setProjectActionError(
+        "Unable to download this project. Please try again.",
+      );
     } finally {
       setDownloadLoading(false);
     }
@@ -709,7 +860,6 @@ function App() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
-
       {/* Header */}
       <header className="sticky top-0 z-50 h-[72px] border-b border-white/10 bg-slate-950/80 backdrop-blur-xl">
         <div className="mx-auto flex h-full max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
@@ -756,11 +906,14 @@ function App() {
       />
 
       {/* Main */}
-      <main className={`mx-auto max-w-7xl px-4 py-8 transition-[margin] duration-300 ease-in-out sm:px-6 sm:py-10 lg:px-8 ${sidebarOpen ? "lg:ml-80" : ""}`}>
-
+      <main
+        className={`mx-auto max-w-7xl px-4 py-8 transition-[margin] duration-300 ease-in-out sm:px-6 sm:py-10 lg:px-8 ${sidebarOpen ? "lg:ml-80" : ""}`}
+      >
         {/* Hero */}
-        <section ref={homeSectionRef} className="mx-auto max-w-4xl scroll-mt-24 text-center">
-
+        <section
+          ref={homeSectionRef}
+          className="mx-auto max-w-4xl scroll-mt-24 text-center"
+        >
           <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-blue-400/20 bg-blue-400/10 px-4 py-2 text-xs font-medium text-blue-300">
             <span>⚡</span>
             Multi-Agent Autonomous Development
@@ -774,26 +927,25 @@ function App() {
           </h2>
 
           <p className="mx-auto mt-5 max-w-2xl text-sm leading-6 text-slate-400 sm:text-base">
-            Describe your software idea. DevTeam AI coordinates specialized
-            AI agents to plan, architect, develop, test, debug, review and
-            document your project.
+            Describe your software idea. DevTeam AI coordinates specialized AI
+            agents to plan, architect, develop, test, debug, review and document
+            your project.
           </p>
-
         </section>
 
         {/* Request Box */}
-        <section ref={requestSectionRef} className="mx-auto mt-10 max-w-4xl scroll-mt-24">
-
+        <section
+          ref={requestSectionRef}
+          className="mx-auto mt-10 max-w-4xl scroll-mt-24"
+        >
           <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 shadow-2xl shadow-black/20 backdrop-blur-xl sm:p-6">
-
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
-                <h3 className="font-semibold">
-                  Ask or build with DevTeam AI
-                </h3>
+                <h3 className="font-semibold">Ask or build with DevTeam AI</h3>
 
                 <p className="mt-1 text-xs text-slate-500 sm:text-sm">
-                  Ask a question, get coding help, or describe a project to build.
+                  Ask a question, get coding help, or describe a project to
+                  build.
                 </p>
               </div>
 
@@ -819,7 +971,6 @@ function App() {
             )}
 
             <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-
               <span className="text-xs text-slate-500">
                 {request.length} characters
               </span>
@@ -838,7 +989,6 @@ function App() {
                   "Send"
                 )}
               </button>
-
             </div>
           </div>
         </section>
@@ -854,55 +1004,51 @@ function App() {
         />
 
         {generationIntent === "BUILD_PROJECT" && (
-        <section className="mt-12">
-
-          <div className="relative mb-5 text-center">
-            <p className="text-xs font-semibold tracking-wide text-blue-400">
-              Development Pipeline
-            </p>
-
-            <h3 className="mt-1 text-xl font-bold sm:text-2xl">
-              AI Agent Workflow
-            </h3>
-
-            <span className="mt-2 block text-xs text-slate-500 sm:absolute sm:right-0 sm:top-1/2 sm:mt-0">
-              8 Agents
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
-
-            {stages.map((stage, index) => (
-              <div
-                key={stage.id}
-                className="relative rounded-xl border border-white/10 bg-white/[0.025] p-4 text-center transition hover:-translate-y-1 hover:border-blue-400/30 hover:bg-white/[0.05]"
-              >
-                <div className="text-2xl">
-                  {stage.icon}
-                </div>
-
-                <p className="mt-2 text-xs font-medium text-slate-300">
-                  {stage.name}
-                </p>
-
-                <span className="mt-2 block text-[10px] text-slate-600">
-                  {String(index + 1).padStart(2, "0")}
-                </span>
-              </div>
-            ))}
-
-          </div>
-        </section>
-        )}
-
-        {generationIntent === "BUILD_PROJECT" && (loading || response || activityHistory.length > 0) && (
           <section className="mt-12">
-            <LiveAgentActivity
-              activityHistory={activityHistory}
-              currentActiveAgent={currentActiveAgent}
-            />
+            <div className="relative mb-5 text-center">
+              <p className="text-xs font-semibold tracking-wide text-blue-400">
+                Development Pipeline
+              </p>
+
+              <h3 className="mt-1 text-xl font-bold sm:text-2xl">
+                AI Agent Workflow
+              </h3>
+
+              <span className="mt-2 block text-xs text-slate-500 sm:absolute sm:right-0 sm:top-1/2 sm:mt-0">
+                8 Agents
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
+              {stages.map((stage, index) => (
+                <div
+                  key={stage.id}
+                  className="relative rounded-xl border border-white/10 bg-white/[0.025] p-4 text-center transition hover:-translate-y-1 hover:border-blue-400/30 hover:bg-white/[0.05]"
+                >
+                  <div className="text-2xl">{stage.icon}</div>
+
+                  <p className="mt-2 text-xs font-medium text-slate-300">
+                    {stage.name}
+                  </p>
+
+                  <span className="mt-2 block text-[10px] text-slate-600">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+                </div>
+              ))}
+            </div>
           </section>
         )}
+
+        {generationIntent === "BUILD_PROJECT" &&
+          (loading || response || activityHistory.length > 0) && (
+            <section className="mt-12">
+              <LiveAgentActivity
+                activityHistory={activityHistory}
+                currentActiveAgent={currentActiveAgent}
+              />
+            </section>
+          )}
 
         {response && (
           <ProjectGenerationComplete
@@ -927,10 +1073,7 @@ function App() {
 
         {/* Result */}
         {response && (
-          <ProjectResult
-            response={response}
-            onReset={resetProject}
-          />
+          <ProjectResult response={response} onReset={resetProject} />
         )}
 
         {/* Empty state */}
@@ -938,9 +1081,7 @@ function App() {
           <section className="mt-12 rounded-2xl border border-dashed border-white/10 p-8 text-center sm:p-12">
             <div className="text-4xl">🧠</div>
 
-            <h3 className="mt-4 text-lg font-semibold">
-              Ready when you are
-            </h3>
+            <h3 className="mt-4 text-lg font-semibold">Ready when you are</h3>
 
             <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
               Ask a question, request coding help, or describe an application
@@ -948,35 +1089,37 @@ function App() {
             </p>
           </section>
         )}
-
       </main>
 
       {/* Footer */}
       <footer className="border-t border-white/10 py-6">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-2 px-4 text-center text-xs text-slate-600 sm:flex-row sm:px-6 lg:px-8">
-          <span>
-            DevTeam AI • Multi-Agent Software Engineering
-          </span>
+          <span>DevTeam AI • Multi-Agent Software Engineering</span>
 
-          <span>
-            React + Tailwind + FastAPI + LangGraph
-          </span>
+          <span>React + Tailwind + FastAPI + LangGraph</span>
         </div>
       </footer>
-
     </div>
   );
 }
-
 
 function AssistantResponse({ response }) {
   const title = response.intent === "CODING_HELP" ? "Coding Help" : "Answer";
 
   return (
-    <section className="mt-10 rounded-2xl border border-blue-300/15 bg-white/[0.035] p-5 shadow-xl shadow-black/10 sm:p-7" aria-live="polite">
-      <p className="text-xs font-semibold tracking-wide text-blue-300">{title}</p>
-      <h3 className="mt-2 break-words text-lg font-semibold text-slate-100">{response.user_request}</h3>
-      <div className="mt-4 whitespace-pre-wrap break-words text-sm leading-7 text-slate-300">{response.answer}</div>
+    <section
+      className="mt-10 rounded-2xl border border-blue-300/15 bg-white/[0.035] p-5 shadow-xl shadow-black/10 sm:p-7"
+      aria-live="polite"
+    >
+      <p className="text-xs font-semibold tracking-wide text-blue-300">
+        {title}
+      </p>
+      <h3 className="mt-2 break-words text-lg font-semibold text-slate-100">
+        {response.user_request}
+      </h3>
+      <div className="mt-4 whitespace-pre-wrap break-words text-sm leading-7 text-slate-300">
+        {response.answer}
+      </div>
     </section>
   );
 }
@@ -993,7 +1136,9 @@ function RecentProjects({
   return (
     <section ref={sectionRef} className="mt-10 scroll-mt-24">
       <div className="mb-4 text-center">
-        <p className="text-xs font-semibold uppercase tracking-widest text-blue-400">Your Workspace</p>
+        <p className="text-xs font-semibold uppercase tracking-widest text-blue-400">
+          Your Workspace
+        </p>
         <h3 className="mt-1 text-xl font-bold sm:text-2xl">Recent Projects</h3>
         <p className="mt-1 text-xs text-slate-500">Saved project history</p>
       </div>
@@ -1003,7 +1148,10 @@ function RecentProjects({
           Loading recent projects...
         </p>
       ) : error ? (
-        <p role="status" className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-4 text-sm text-amber-200/80">
+        <p
+          role="status"
+          className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-4 text-sm text-amber-200/80"
+        >
           {error}
         </p>
       ) : projects.length === 0 ? (
@@ -1013,7 +1161,10 @@ function RecentProjects({
       ) : (
         <div className="space-y-3">
           {projects.map((project) => (
-            <article key={project.project_id} className="rounded-2xl border border-white/10 bg-white/[0.025] p-4 sm:p-5">
+            <article
+              key={project.project_id}
+              className="rounded-2xl border border-white/10 bg-white/[0.025] p-4 sm:p-5"
+            >
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div className="min-w-0">
                   <h4 className="break-words font-semibold text-slate-100">
@@ -1023,8 +1174,23 @@ function RecentProjects({
                     Created: {formatProjectDate(project.created_at)}
                   </p>
                   <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400">
-                    <span>Status: <span className={project.status === "completed" ? "text-emerald-300" : project.status === "failed" ? "text-red-300" : "text-slate-300"}>{formatProjectStatus(project.status)}</span></span>
-                    <span>Tests: {formatProjectStatus(project.test_status)}</span>
+                    <span>
+                      Status:{" "}
+                      <span
+                        className={
+                          project.status === "completed"
+                            ? "text-emerald-300"
+                            : project.status === "failed"
+                              ? "text-red-300"
+                              : "text-slate-300"
+                        }
+                      >
+                        {formatProjectStatus(project.status)}
+                      </span>
+                    </span>
+                    <span>
+                      Tests: {formatProjectStatus(project.test_status)}
+                    </span>
                     <span>Files: {project.file_count ?? 0}</span>
                   </p>
                 </div>
@@ -1054,7 +1220,6 @@ function RecentProjects({
   );
 }
 
-
 function ProjectGenerationComplete({
   projectId,
   downloadLoading,
@@ -1067,14 +1232,21 @@ function ProjectGenerationComplete({
       <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="flex items-center gap-2 text-emerald-300">
-            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-400/15 text-lg">✓</span>
-            <h3 className="text-lg font-bold sm:text-xl">Project Generation Complete</h3>
+            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-400/15 text-lg">
+              ✓
+            </span>
+            <h3 className="text-lg font-bold sm:text-xl">
+              Project Generation Complete
+            </h3>
           </div>
           <p className="mt-2 text-sm text-slate-300">
             Your project has been successfully generated.
           </p>
           <p className="mt-3 text-xs text-slate-400">
-            Project ID: <span className="break-all font-mono text-blue-300">{projectId}</span>
+            Project ID:{" "}
+            <span className="break-all font-mono text-blue-300">
+              {projectId}
+            </span>
           </p>
         </div>
 
@@ -1097,12 +1269,13 @@ function ProjectGenerationComplete({
         </div>
       </div>
       {error && (
-        <p role="alert" className="mt-4 text-sm text-red-300">{error}</p>
+        <p role="alert" className="mt-4 text-sm text-red-300">
+          {error}
+        </p>
       )}
     </section>
   );
 }
-
 
 function ProjectViewer({ projectId, onClose }) {
   const [files, setFiles] = useState([]);
@@ -1121,16 +1294,25 @@ function ProjectViewer({ projectId, onClose }) {
       setSelectedPath("");
 
       try {
-        const projectUrl = apiEndpoint(`/projects/${encodeURIComponent(projectId)}`);
-        const projectResponse = await fetch(projectUrl, { signal: controller.signal });
-        if (!projectResponse.ok) throw new Error("Project could not be loaded.");
+        const projectUrl = apiEndpoint(
+          `/projects/${encodeURIComponent(projectId)}`,
+        );
+        const projectResponse = await fetch(projectUrl, {
+          signal: controller.signal,
+        });
+        if (!projectResponse.ok)
+          throw new Error("Project could not be loaded.");
 
         const data = await projectResponse.json();
-        if (!Array.isArray(data.files)) throw new Error("Project response was invalid.");
+        if (!Array.isArray(data.files))
+          throw new Error("Project response was invalid.");
 
         if (active) {
           setFiles(data.files);
-          setSelectedPath(data.files.find((file) => !isHiddenProjectFile(file.path))?.path || "");
+          setSelectedPath(
+            data.files.find((file) => !isHiddenProjectFile(file.path))?.path ||
+              "",
+          );
         }
       } catch {
         if (active && !controller.signal.aborted) {
@@ -1156,8 +1338,12 @@ function ProjectViewer({ projectId, onClose }) {
     <section className="mt-8 overflow-hidden rounded-2xl border border-white/10 bg-slate-900/80 shadow-2xl shadow-black/30">
       <div className="flex flex-col gap-3 border-b border-white/10 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
         <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-widest text-blue-400">Project Files</p>
-          <h3 className="mt-1 break-all font-mono text-sm text-slate-200">{projectId}</h3>
+          <p className="text-xs font-semibold uppercase tracking-widest text-blue-400">
+            Project Files
+          </p>
+          <h3 className="mt-1 break-all font-mono text-sm text-slate-200">
+            {projectId}
+          </h3>
         </div>
         <button
           type="button"
@@ -1171,17 +1357,27 @@ function ProjectViewer({ projectId, onClose }) {
       {loading ? (
         <p className="p-6 text-sm text-slate-400">Loading project files...</p>
       ) : error ? (
-        <p role="alert" className="p-6 text-sm text-red-300">{error}</p>
+        <p role="alert" className="p-6 text-sm text-red-300">
+          {error}
+        </p>
       ) : visibleFiles.length === 0 ? (
-        <p className="p-6 text-sm text-slate-400">No previewable project files are available.</p>
+        <p className="p-6 text-sm text-slate-400">
+          No previewable project files are available.
+        </p>
       ) : (
         <div className="grid min-h-80 lg:grid-cols-[minmax(14rem,0.8fr)_minmax(0,2fr)]">
-          <nav aria-label="Generated project files" className="border-b border-white/10 p-3 lg:border-b-0 lg:border-r">
-            <p className="px-2 pb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Files</p>
+          <nav
+            aria-label="Generated project files"
+            className="border-b border-white/10 p-3 lg:border-b-0 lg:border-r"
+          >
+            <p className="px-2 pb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Files
+            </p>
             <ul className="max-h-[32rem] space-y-1 overflow-auto">
               {navigatorEntries.map((entry) => {
                 const depth = Math.min(entry.depth, 8);
-                const selected = entry.type === "file" && selectedPath === entry.path;
+                const selected =
+                  entry.type === "file" && selectedPath === entry.path;
                 return (
                   <li key={`${entry.type}-${entry.path}`}>
                     {entry.type === "folder" ? (
@@ -1217,9 +1413,13 @@ function ProjectViewer({ projectId, onClose }) {
               {selectedFile?.path || "Select a file"}
             </div>
             {selectedFile?.is_binary || selectedFile?.content == null ? (
-              <p className="p-5 text-sm text-slate-400">This file cannot be previewed as text.</p>
+              <p className="p-5 text-sm text-slate-400">
+                This file cannot be previewed as text.
+              </p>
             ) : (
-              <pre className="max-h-[32rem] overflow-auto p-4 text-xs leading-5 text-slate-300 sm:p-5"><code>{selectedFile?.content ?? ""}</code></pre>
+              <pre className="max-h-[32rem] overflow-auto p-4 text-xs leading-5 text-slate-300 sm:p-5">
+                <code>{selectedFile?.content ?? ""}</code>
+              </pre>
             )}
           </div>
         </div>
@@ -1228,7 +1428,6 @@ function ProjectViewer({ projectId, onClose }) {
   );
 }
 
-
 function ProjectResult({ response, onReset }) {
   const testResults = response.test_results || {};
   const testSuite = testResults.test_suite || {};
@@ -1236,12 +1435,9 @@ function ProjectResult({ response, onReset }) {
 
   return (
     <section className="mt-12 space-y-6">
-
       {/* Result Header */}
       <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.04] p-5 sm:p-6">
-
         <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
-
           <div>
             <div className="flex items-center gap-2 text-emerald-400">
               <span>✓</span>
@@ -1261,7 +1457,6 @@ function ProjectResult({ response, onReset }) {
           >
             New Project
           </button>
-
         </div>
 
         {/* Project ID */}
@@ -1274,12 +1469,10 @@ function ProjectResult({ response, onReset }) {
             {response.project_id}
           </p>
         </div>
-
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-
         <StatCard
           label="Generated Files"
           value={response.generated_files?.length || 0}
@@ -1303,19 +1496,14 @@ function ProjectResult({ response, onReset }) {
           value={response.debug_attempts ?? 0}
           icon="🐞"
         />
-
       </div>
 
       {/* Two-column section */}
       <div className="grid gap-6 lg:grid-cols-2">
-
         {/* Files */}
         <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-5">
-
           <div className="mb-4">
-            <h3 className="font-bold">
-              Generated Files
-            </h3>
+            <h3 className="font-bold">Generated Files</h3>
 
             <p className="mt-1 text-xs text-slate-500">
               Files created by the development team.
@@ -1336,16 +1524,12 @@ function ProjectResult({ response, onReset }) {
               </div>
             ))}
           </div>
-
         </div>
 
         {/* Tests */}
         <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-5">
-
           <div className="mb-4">
-            <h3 className="font-bold">
-              Test Results
-            </h3>
+            <h3 className="font-bold">Test Results</h3>
 
             <p className="mt-1 text-xs text-slate-500">
               Automated verification of the generated project.
@@ -1360,10 +1544,7 @@ function ProjectResult({ response, onReset }) {
             }`}
           >
             <div className="flex items-center justify-between">
-
-              <span className="text-sm font-medium">
-                Test Suite
-              </span>
+              <span className="text-sm font-medium">Test Suite</span>
 
               <span
                 className={
@@ -1372,50 +1553,30 @@ function ProjectResult({ response, onReset }) {
                     : "text-red-400"
                 }
               >
-                {testSuite.status === "passed"
-                  ? "PASSED"
-                  : "FAILED"}
+                {testSuite.status === "passed" ? "PASSED" : "FAILED"}
               </span>
-
             </div>
 
             <div className="mt-4 grid grid-cols-3 gap-2">
+              <MiniStat label="Passed" value={testSuite.passed ?? 0} />
 
-              <MiniStat
-                label="Passed"
-                value={testSuite.passed ?? 0}
-              />
+              <MiniStat label="Failed" value={testSuite.failed ?? 0} />
 
-              <MiniStat
-                label="Failed"
-                value={testSuite.failed ?? 0}
-              />
-
-              <MiniStat
-                label="Errors"
-                value={testSuite.errors ?? 0}
-              />
-
+              <MiniStat label="Errors" value={testSuite.errors ?? 0} />
             </div>
           </div>
-
         </div>
-
       </div>
 
       {/* Review */}
       <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-5 sm:p-6">
-
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-
           <div>
             <p className="text-xs uppercase tracking-wider text-purple-400">
               Code Review
             </p>
 
-            <h3 className="mt-1 text-lg font-bold">
-              AI Code Reviewer
-            </h3>
+            <h3 className="mt-1 text-lg font-bold">AI Code Reviewer</h3>
           </div>
 
           <div
@@ -1427,7 +1588,6 @@ function ProjectResult({ response, onReset }) {
           >
             {review.overall_status || "UNKNOWN"}
           </div>
-
         </div>
 
         <p className="mt-4 text-sm leading-6 text-slate-400">
@@ -1436,89 +1596,61 @@ function ProjectResult({ response, onReset }) {
 
         {review.suggestions?.length > 0 && (
           <div className="mt-5">
-
-            <p className="mb-2 text-sm font-semibold">
-              Suggestions
-            </p>
+            <p className="mb-2 text-sm font-semibold">Suggestions</p>
 
             <div className="space-y-2">
-              {review.suggestions.map(
-                (suggestion, index) => (
-                  <div
-                    key={index}
-                    className="rounded-lg bg-slate-950/50 px-3 py-2.5 text-xs leading-5 text-slate-400"
-                  >
-                    💡 {suggestion}
-                  </div>
-                )
-              )}
+              {review.suggestions.map((suggestion, index) => (
+                <div
+                  key={index}
+                  className="rounded-lg bg-slate-950/50 px-3 py-2.5 text-xs leading-5 text-slate-400"
+                >
+                  💡 {suggestion}
+                </div>
+              ))}
             </div>
-
           </div>
         )}
-
       </div>
 
       {/* Requirements */}
       <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-5 sm:p-6">
-
-        <h3 className="font-bold">
-          Requirements
-        </h3>
+        <h3 className="font-bold">Requirements</h3>
 
         <div className="mt-4 grid gap-2 sm:grid-cols-2">
+          {(response.requirements || []).map((requirement, index) => (
+            <div
+              key={index}
+              className="flex gap-3 rounded-lg bg-slate-950/50 p-3"
+            >
+              <span className="text-blue-400">{index + 1}.</span>
 
-          {(response.requirements || []).map(
-            (requirement, index) => (
-              <div
-                key={index}
-                className="flex gap-3 rounded-lg bg-slate-950/50 p-3"
-              >
-                <span className="text-blue-400">
-                  {index + 1}.
-                </span>
-
-                <span className="text-xs leading-5 text-slate-400">
-                  {requirement}
-                </span>
-              </div>
-            )
-          )}
-
+              <span className="text-xs leading-5 text-slate-400">
+                {requirement}
+              </span>
+            </div>
+          ))}
         </div>
-
       </div>
-
     </section>
   );
 }
 
-
 function StatCard({ label, value, icon }) {
   return (
     <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
-      <div className="text-xl">
-        {icon}
-      </div>
+      <div className="text-xl">{icon}</div>
 
-      <p className="mt-3 text-2xl font-black">
-        {value}
-      </p>
+      <p className="mt-3 text-2xl font-black">{value}</p>
 
-      <p className="mt-1 text-xs text-slate-500">
-        {label}
-      </p>
+      <p className="mt-1 text-xs text-slate-500">{label}</p>
     </div>
   );
 }
 
-
 function MiniStat({ label, value }) {
   return (
     <div className="rounded-lg bg-slate-950/60 p-3 text-center">
-      <p className="text-lg font-bold">
-        {value}
-      </p>
+      <p className="text-lg font-bold">{value}</p>
 
       <p className="mt-1 text-[10px] uppercase tracking-wider text-slate-600">
         {label}
@@ -1526,6 +1658,5 @@ function MiniStat({ label, value }) {
     </div>
   );
 }
-
 
 export default App;

@@ -2,218 +2,528 @@
 
 > **Multi-Agent Autonomous Software Development Team**
 
-DevTeam AI is an AI-powered software development system that uses multiple specialized agents to automate the software development workflow.
+DevTeam AI is an AI-powered software development platform that uses multiple specialized AI agents to transform an explicit software-development request into a working project.
 
-Instead of relying on a single AI agent, DevTeam AI divides the development process into specialized roles such as requirements analysis, architecture design, coding, file generation, testing, debugging, code review, and documentation.
+Instead of relying on a single general-purpose coding agent, DevTeam AI divides the development workflow into specialized stages for requirements, architecture, implementation, file generation, testing, debugging, code review, and documentation.
 
 ---
 
-## Overview
+## Current Project Status
 
-DevTeam AI follows an automated development pipeline:
+The project has reached a functional end-to-end stage with:
+
+- FastAPI backend
+- LangGraph multi-agent workflow
+- 8 specialized AI agents
+- Multiple LLM provider fallback
+- Ollama-first local LLM support
+- Safe generated-project filesystem handling
+- Automated testing and debugging loop
+- AI code review
+- Automatic documentation generation
+- Real-time agent activity streaming
+- Persistent generated-project history
+- Project viewer
+- Project ZIP download
+- React/Vite frontend
+- Sidebar navigation
+- DevTeam AI/J.A.R.V.I.S. branding
+- Intent-aware handling for `ANSWER`, `CODING_HELP`, and `BUILD_PROJECT`
+- Frontend navigation separated into Home, New Project, My Projects, History, and Settings
+
+The remaining major work is to connect the frontend **History** page to a persistent backend conversation-history API so normal questions and coding-help requests can be stored and displayed separately from generated projects.
+
+---
+
+## Product Goal
+
+The long-term goal is to provide an autonomous software-engineering environment where a user can describe a software idea and an AI development team can collaboratively transform it into a working project.
+
+The system is intentionally designed around specialized agents rather than one monolithic coding agent.
 
 ```text
 User Request
      |
      v
-Project Manager
+Intent Classifier
      |
-     v
-Architect
+     +---- ANSWER ---------> Answer Response
      |
-     v
-Developer
+     +---- CODING_HELP -----> Coding Help Response
      |
-     v
-File System Agent
-     |
-     v
-Tester
-     |
-     +---- Tests Failed ----> Debugger
-     |                         |
-     |                         v
-     |                       Tester
-     |
-     +---- Tests Passed -----> Code Reviewer
+     +---- BUILD_PROJECT ---> Multi-Agent Development Workflow
                                   |
                                   v
-                            Documentation
+                              Requirements
                                   |
                                   v
-                                 END
+                              Architecture
+                                  |
+                                  v
+                              Development
+                                  |
+                                  v
+                              File System
+                                  |
+                                  v
+                                Testing
+                                  |
+                         +--------+--------+
+                         |                 |
+                      Failed            Passed
+                         |                 |
+                         v                 v
+                      Debugger       Code Reviewer
+                         |                 |
+                         +----> Tester    v
+                                      Documentation
+                                           |
+                                           v
+                                          END
 ```
 
-The workflow is orchestrated using **LangGraph**, while the backend API is built with **FastAPI**.
+---
+
+# Features Implemented
+
+## 1. Multi-Agent Development Workflow
+
+DevTeam AI currently contains eight specialized agents:
+
+| Agent | Responsibility |
+|---|---|
+| Project Manager | Converts the software request into structured requirements and tasks |
+| Architect | Designs the project architecture and folder structure |
+| Developer | Generates source code, tests, and project documentation |
+| File System Agent | Safely creates generated project files |
+| Tester | Validates and executes generated tests |
+| Debugger | Attempts to fix generated-project failures |
+| Code Reviewer | Reviews implementation quality and consistency |
+| Documentation | Generates documentation based on the generated project |
 
 ---
 
-## Features
+## 2. LangGraph Workflow
 
-- Multi-agent software development workflow
-- Automated requirement analysis
-- AI-generated project architecture
-- Automated source-code generation
-- Automatic project file creation
-- Automated testing
-- Debugging loop for failed tests
-- AI-based code review
-- Automatic documentation generation
-- Multiple LLM provider fallback
-- Path traversal protection for generated files
+The main project-generation workflow is implemented using LangGraph.
+
+```text
+START
+  |
+  v
+Project Manager
+  |
+  v
+Architect
+  |
+  v
+Developer
+  |
+  v
+File System
+  |
+  v
+Tester
+  |
+  +---- Tests Failed ----> Debugger
+  |                          |
+  |                          v
+  |                        Tester
+  |
+  +---- Tests Passed ----> Code Reviewer
+                               |
+                               v
+                         Documentation
+                               |
+                               v
+                              END
+```
+
+The debugger loop is limited to a maximum of three debugging attempts before the workflow continues to code review.
+
+---
+
+# Intent-Aware AI Interaction
+
+A major architectural improvement is that DevTeam AI is not intended to treat every user message as a project-generation request.
+
+The system recognizes three request categories:
+
+### `ANSWER`
+
+For normal questions and explanations.
+
+Examples:
+
+```text
+What is Python?
+Explain REST API.
+What is machine learning?
+```
+
+These should return an AI answer without creating a project folder or project record.
+
+### `CODING_HELP`
+
+For coding assistance that does not request a complete generated project.
+
+Examples:
+
+```text
+Write a Python function to reverse a string.
+Fix this JavaScript error.
+Explain this React code.
+```
+
+These should return coding assistance without creating a generated project.
+
+### `BUILD_PROJECT`
+
+For explicit software-generation requests.
+
+Examples:
+
+```text
+Build a Python calculator application.
+Create a React expense tracker.
+Develop a FastAPI backend for a bike rental system.
+```
+
+These enter the full multi-agent development workflow and are stored as generated projects.
+
+---
+
+# Project Persistence
+
+Generated projects are persisted separately from normal AI conversations.
+
+The backend uses SQLite through Python's standard library and a project repository service.
+
+### Project metadata
+
+The `projects` table stores information such as:
+
+- Project ID
+- User request
+- Creation time
+- Updated time
+- Project status
+- Test status
+- File count
+
+### Generated project files
+
+Actual generated files are stored under:
+
+```text
+recent_projects/<project_id>/
+```
+
+This allows generated projects to be viewed again after generation.
+
+---
+
+# Project API
+
+## Health Check
+
+```http
+GET /
+```
+
+Example response:
+
+```json
+{
+  "message": "DevTeam AI is running"
+}
+```
+
+## Generate Project
+
+```http
+POST /generate
+```
+
+Example request:
+
+```json
+{
+  "request": "Create a simple Python calculator application"
+}
+```
+
+## Real-Time Generation
+
+```http
+GET /generate/stream?request=<encoded-request>
+```
+
+The frontend uses Server-Sent Events to receive real-time workflow activity.
+
+The stream can communicate events for:
+
+- Intent detection
+- Agent activity
+- Project completion
+- Normal AI responses
+- Coding-help responses
+- Errors
+
+## Project List
+
+```http
+GET /projects
+```
+
+Returns persisted generated projects.
+
+## Project Details
+
+```http
+GET /projects/{project_id}
+```
+
+Returns project metadata and generated files.
+
+## Project Download
+
+```http
+GET /projects/{project_id}/download
+```
+
+Returns the generated project as a ZIP archive.
+
+---
+
+# Frontend
+
+The frontend is built using:
+
+- React
+- Vite
+- Tailwind CSS
+
+The frontend currently contains:
+
+- DevTeam AI branding
+- J.A.R.V.I.S.-style logo asset
+- Hamburger sidebar
+- Home navigation
+- New Project navigation
+- My Projects navigation
+- History navigation
+- Settings navigation
+- AI request interface
+- Real-time agent activity
+- Project generation result UI
+- Generated project viewer
+- Project ZIP download
+- Persistent My Projects interface
+
+### Navigation structure
+
+```text
+Home
+ |
+ +-- New Project
+ |
+ +-- My Projects
+ |
+ +-- History
+ |
+ +-- Settings
+```
+
+### Data separation
+
+The intended separation is:
+
+```text
+My Projects
+    |
+    +-- Only generated software projects
+    +-- Project request
+    +-- Architecture
+    +-- Generated files
+    +-- Test results
+    +-- Debugging information
+    +-- Code review
+    +-- Documentation
+    +-- Project metadata
+    +-- View Project
+    +-- Download ZIP
+
+History
+    |
+    +-- Normal questions
+    +-- Explanations
+    +-- Coding help
+    +-- AI conversations
+```
+
+Recent Projects is no longer intended to be a permanent section of the Home dashboard. Generated projects belong in **My Projects**.
+
+The current frontend History screen is a placeholder until the backend conversation-history persistence/API is implemented.
+
+---
+
+# Agent Activity Streaming
+
+The frontend receives real-time agent activity through Server-Sent Events.
+
+The workflow can show stages such as:
+
+```text
+Project Manager
+Architect
+Developer
+File System
+Tester
+Debugger
+Code Reviewer
+Documentation
+```
+
+Each stage can communicate states such as:
+
+- Pending
+- Running
+- Completed
+- Failed
+
+This provides live visibility into the autonomous development workflow.
+
+---
+
+# Testing System
+
+The Tester agent validates generated projects.
+
+For Python projects, the system can perform:
+
 - Python AST validation
-- Test execution with timeouts
-- REST API for project generation
+- Import validation
+- Unit-test execution
+- Suitable non-interactive module execution
+- Timeout handling
+- Failure detection
 
----
-
-## AI Agents
-
-DevTeam AI currently contains **8 specialized agents**.
-
-| Agent             | Responsibility                                                               |
-| ----------------- | ---------------------------------------------------------------------------- |
-| Project Manager   | Converts the user request into structured requirements and development tasks |
-| Architect         | Designs the project architecture and folder structure                        |
-| Developer         | Generates source code, tests, and project documentation                      |
-| File System Agent | Creates the generated project files safely                                   |
-| Tester            | Validates and executes generated tests                                       |
-| Debugger          | Fixes errors detected during testing                                         |
-| Code Reviewer     | Reviews the generated implementation for quality and issues                  |
-| Documentation     | Generates project documentation based on the actual project                  |
-
----
-
-## Workflow Logic
-
-The current workflow is implemented using LangGraph.
-
-### 1. Project Manager
-
-Receives the user's software request and determines the requirements and tasks.
-
-### 2. Architect
-
-Creates an architecture based on the actual project requirement.
-
-The architecture is not restricted to web applications. Depending on the request, it can describe projects such as:
-
-- Python CLI applications
-- Automation tools
-- Backend/API applications
-- Desktop applications
-- Full-stack applications
-- Other software systems
-
-### 3. Developer
-
-Generates the required project files according to the architecture and requirements.
-
-The developer is instructed to avoid unnecessarily inventing:
-
-- Frameworks
-- Databases
-- APIs
-- Authentication systems
-- Dependencies
-- Modules
-- Classes
-- Services
-
-### 4. File System Agent
-
-Writes the generated files into the project's generated-project directory.
-
-The file system layer also prevents:
-
-- Absolute paths
-- Path traversal
-- Writing files outside the generated project directory
-
-### 5. Tester
-
-The tester performs validation and testing.
-
-For Python projects it can:
-
-- Validate Python syntax using AST
-- Detect problematic imports
-- Execute unit tests
-- Execute suitable non-interactive Python modules
-- Detect test failures
-- Apply execution timeouts
-
-The current default Python test command is:
+The default Python test command is:
 
 ```bash
 python -m unittest discover -s tests
 ```
 
-### 6. Debugger
+---
 
-If tests fail, the debugger receives the relevant project information and attempts to fix the generated files.
+# Debugging System
 
-The workflow can repeat the:
+If generated tests fail, the workflow can send the project back to the Debugger.
 
 ```text
-Tester -> Debugger -> Tester
+Tester
+  |
+  | failure
+  v
+Debugger
+  |
+  v
+Tester
 ```
 
-cycle.
+The current workflow allows up to three debugging attempts.
 
-The current workflow allows up to **3 debugging attempts** before continuing to code review.
-
-### 7. Code Reviewer
-
-After testing succeeds, the generated project is reviewed for:
-
-- Code quality
-- Potential issues
-- Maintainability
-- Implementation consistency
-- Unnecessary complexity
-
-### 8. Documentation Agent
-
-Finally, documentation is generated based on the project and its implementation.
+After the debugging limit is reached, the workflow continues to code review rather than looping indefinitely.
 
 ---
 
-## Technology Stack
+# File-System Security
 
-### Backend
+Generated project files are handled through a protected filesystem layer.
+
+The filesystem implementation includes protection against:
+
+- Absolute paths
+- Path traversal
+- Backslash-based traversal
+- Writing outside the generated project directory
+- Unsafe project-root symlinks
+- Unsafe recursive reads
+- Unsafe ZIP traversal
+
+Project reads do not create missing project directories.
+
+Symlinks are skipped when recursively reading or ZIPing generated projects.
+
+---
+
+# LLM Provider Architecture
+
+The provider router supports multiple LLM providers.
+
+The current provider sequence is designed around local Ollama first, followed by configured cloud providers.
+
+Current supported providers include:
+
+1. Ollama
+2. Groq
+3. Google Gemini
+4. DeepSeek
+5. Anthropic Claude
+6. OpenRouter
+
+The router can attempt another configured provider when an earlier provider is unavailable or fails.
+
+### Local Ollama
+
+Ollama is currently used as the preferred local provider when configured.
+
+A supported local model in the current development environment is:
+
+```text
+GPT-OSS 20B
+```
+
+The advantage of the local provider is that development can continue without depending entirely on cloud API quota or credit availability.
+
+---
+
+# Technology Stack
+
+## Backend
 
 - Python
 - FastAPI
 - LangGraph
 - LangChain
 - python-dotenv
+- SQLite
+- Python subprocess
+- Python AST
 
-### AI / LLM Providers
+## Frontend
 
-DevTeam AI currently supports a fallback sequence involving:
+- React
+- Vite
+- Tailwind CSS
+- Server-Sent Events
 
-1. Google Gemini
-2. Groq
-3. DeepSeek
-4. Anthropic Claude
-5. OpenRouter
+## AI
 
-The system attempts the configured providers in sequence when an earlier provider fails.
-
-### Project Execution
-
-- Python subprocess execution
-- Python AST validation
-- `unittest`
-- File-system safety validation
+- Ollama
+- Google Gemini
+- Groq
+- DeepSeek
+- Anthropic Claude
+- OpenRouter
 
 ---
 
-## Project Structure
+# Project Structure
 
 ```text
-devteam-ai/
+DevTeam-AI/
 |
 +-- backend/
 |   |
@@ -236,6 +546,7 @@ devteam-ai/
 |   +-- services/
 |   |   +-- __init__.py
 |   |   +-- llm.py
+|   |   +-- project_repository.py
 |   |
 |   +-- tools/
 |   |   +-- __init__.py
@@ -245,6 +556,16 @@ devteam-ai/
 |   +-- .env
 |
 +-- frontend/
+|   +-- public/
+|   |   +-- jarvis.png
+|   |
+|   +-- src/
+|   |   +-- App.jsx
+|   |   +-- main.jsx
+|   |
+|   +-- package.json
+|
++-- recent_projects/
 |
 +-- generated_projects/
 |
@@ -256,27 +577,65 @@ devteam-ai/
 
 ---
 
+# Installation
+
 ## Requirements
 
-Make sure the following are installed:
+Install:
 
 - Python 3.10+
-- pip
+- Node.js
+- npm
 - Git
+- Ollama if using the local provider
 
-Recommended Python packages:
+Clone the repository:
 
 ```bash
-pip install -U langchain-google-genai
-pip install -U langgraph langchain python-dotenv fastapi uvicorn
-pip install -U anthropic openai
+git clone https://github.com/OmmPrakash-07/DevTeam-AI.git
+```
+
+Enter the project:
+
+```bash
+cd DevTeam-AI
 ```
 
 ---
 
-## Configuration
+# Backend Setup
 
-Create a `.env` file inside the `backend` directory.
+Create a Python virtual environment:
+
+```powershell
+python -m venv backend/venv
+```
+
+Activate it on Windows:
+
+```powershell
+backend\venv\Scripts\Activate.ps1
+```
+
+Install dependencies:
+
+```powershell
+pip install -U langchain-google-genai langgraph langchain python-dotenv fastapi uvicorn anthropic openai
+```
+
+Install/configure any additional provider packages required by the current provider implementation.
+
+---
+
+# Environment Configuration
+
+Create:
+
+```text
+backend/.env
+```
+
+Example:
 
 ```env
 GEMINI_API_KEY=your_gemini_api_key
@@ -288,68 +647,26 @@ OPENROUTER_API_KEY=your_openrouter_api_key
 
 Only configure the providers you intend to use.
 
+If Ollama is being used locally, make sure the Ollama service and required model are available.
+
 ### Security
 
-Do not commit API keys to GitHub.
+Never commit API keys or other secrets to GitHub.
 
-The repository `.gitignore` excludes:
-
-```text
-backend/.env
-.env
-```
+The repository should keep environment files excluded through `.gitignore`.
 
 ---
 
-## Installation
+# Running the Backend
 
-Clone the repository:
-
-```bash
-git clone https://github.com/OmmPrakash-07/DevTeam-AI.git
-```
-
-Move into the project:
-
-```bash
-cd DevTeam-AI
-```
-
-Create a virtual environment:
-
-```bash
-python -m venv backend/venv
-```
-
-Activate it on Windows:
-
-```powershell
-backend\venv\Scripts\Activate.ps1
-```
-
-Install the dependencies:
-
-```bash
-pip install -U langchain-google-genai langgraph langchain python-dotenv fastapi uvicorn anthropic openai
-```
-
----
-
-## Running the Backend
-
-Move into the backend directory:
+From the project root:
 
 ```powershell
 cd backend
-```
-
-Start FastAPI:
-
-```powershell
 uvicorn main:app --reload
 ```
 
-The API will normally be available at:
+Backend:
 
 ```text
 http://127.0.0.1:8000
@@ -363,100 +680,49 @@ http://127.0.0.1:8000/docs
 
 ---
 
-## API
+# Running the Frontend
 
-### Health Check
-
-```http
-GET /
-```
-
-Example response:
-
-```json
-{
-  "message": "DevTeam AI is running"
-}
-```
-
----
-
-### Generate Project
-
-```http
-POST /generate
-```
-
-Request:
-
-```json
-{
-  "request": "Create a simple Python calculator application"
-}
-```
-
-Example PowerShell request:
+From another terminal:
 
 ```powershell
-Invoke-RestMethod `
-  -Uri "http://127.0.0.1:8000/generate" `
-  -Method Post `
-  -ContentType "application/json" `
-  -Body '{"request":"Create a simple Python calculator application"}'
+cd frontend
+npm install
+npm run dev
 ```
 
-The response contains information such as:
+Vite will display the local development URL in the terminal.
 
-- User request
-- Requirements
-- Architecture
-- Generated files
-- Tasks
-- Test results
-- Code review
-- Debug attempts
+The frontend uses:
+
+```text
+VITE_API_URL
+```
+
+when configured. Otherwise it falls back to:
+
+```text
+http://127.0.0.1:8000
+```
 
 ---
 
-## Generated Projects
+# Example Project Request
 
-Generated applications are currently stored inside:
-
-```text
-generated_projects/
-```
-
-For example:
+Example:
 
 ```text
-generated_projects/
-└── generated_project/
-    ├── src/
-    ├── tests/
-    └── README.md
+Build a bike rental application using React, FastAPI and PostgreSQL.
 ```
 
-The current implementation uses a generated project directory for the workflow.
-
-> **Note:** Unique project IDs and isolated project directories are planned for a future version.
-
----
-
-## Testing DevTeam AI
-
-A simple end-to-end test can be performed by sending a project-generation request:
-
-```powershell
-Invoke-RestMethod `
-  -Uri "http://127.0.0.1:8000/generate" `
-  -Method Post `
-  -ContentType "application/json" `
-  -Body '{"request":"Create a simple Python calculator application"}'
-```
-
-A successful workflow should proceed through:
+The intended workflow is:
 
 ```text
+User Request
+    ↓
+Intent Detection
+    ↓
+BUILD_PROJECT
+    ↓
 Project Manager
     ↓
 Architect
@@ -467,60 +733,22 @@ File System
     ↓
 Tester
     ↓
+Debugger if required
+    ↓
 Code Reviewer
     ↓
 Documentation
+    ↓
+Saved Project
 ```
 
-If generated tests fail, the workflow can enter:
-
-```text
-Tester
-   ↓
-Debugger
-   ↓
-Tester
-```
-
-until the tests pass or the debugging-attempt limit is reached.
+The resulting project can then be opened through **My Projects** and downloaded as a ZIP archive.
 
 ---
 
-## Error Handling
+# Current Development Checkpoint
 
-The system includes several layers of validation.
-
-### API Validation
-
-An empty project request is rejected.
-
-### File System Validation
-
-The file system tool prevents:
-
-```text
-Absolute paths
-Path traversal
-Writing outside the project directory
-```
-
-### Code Validation
-
-Python source files can be parsed using Python's AST parser before execution.
-
-### Test Validation
-
-The tester checks generated tests and executes appropriate test suites.
-
-### LLM Fallback
-
-If one configured LLM provider fails, the router can attempt another configured provider.
-
----
-
-## Current Status
-
-### Implemented
+The following major work has been completed:
 
 - [x] Project Manager Agent
 - [x] Architect Agent
@@ -533,120 +761,142 @@ If one configured LLM provider fails, the router can attempt another configured 
 - [x] LangGraph workflow
 - [x] FastAPI backend
 - [x] Multi-provider LLM fallback
+- [x] Ollama-first provider support
 - [x] Generated project files
 - [x] Automated testing
 - [x] Debugging loop
 - [x] Code review
 - [x] Documentation generation
-- [x] File-system path protection
+- [x] Filesystem path protection
+- [x] SQLite project persistence
+- [x] Persistent project metadata
+- [x] Project file viewer
+- [x] Project ZIP download
+- [x] Real-time agent activity streaming
+- [x] Intent detection for ANSWER / CODING_HELP / BUILD_PROJECT
+- [x] Frontend sidebar
+- [x] DevTeam AI branding and logo
+- [x] Home navigation
+- [x] New Project navigation
+- [x] My Projects navigation
+- [x] History navigation label
+- [x] Settings navigation placeholder
+- [x] Frontend usability improvements
+- [x] Hidden Python cache/compiled files from the project viewer
+- [x] Primary/secondary button styling and focus states
+- [x] Production frontend build/lint validation during the latest UI work
+
+### Currently in progress
+
+- [ ] Fully separate Home, My Projects and History rendering in the final App.jsx replacement
+- [ ] Persistent backend conversation-history storage
+- [ ] `GET /history` API
+- [ ] Display persisted ANSWER/CODING_HELP conversations in History
+- [ ] Ensure normal questions never create project records
+- [ ] Ensure only `BUILD_PROJECT` requests enter My Projects
 
 ---
 
-## Roadmap
+# Deployment
 
-The following features are planned for future development:
+The current development deployment has been used with:
 
-### Project Management
+Backend:
 
-- [ ] Unique project IDs
-- [ ] Separate folder for every generated project
-- [ ] Project history
+```text
+https://devteam-ai.onrender.com/
+```
+
+Frontend:
+
+```text
+https://devteam-ai.vercel.app/
+```
+
+For production use, persistent storage must be configured appropriately for generated projects and the SQLite database, or the persistence layer should be migrated to a managed database/storage solution.
+
+---
+
+# Roadmap
+
+## Project Management
+
+- [ ] Unique project IDs improvements
+- [ ] Dedicated isolated directory for every project
+- [ ] Project history enhancements
 - [ ] Project status tracking
+- [ ] Project deletion/management UI
 
-### Frontend
+## Conversation History
 
-- [ ] React dashboard
-- [ ] Tailwind CSS interface
-- [ ] Real-time agent activity
-- [ ] Project generation interface
-- [ ] Generated-file viewer
-- [ ] Test-result dashboard
+- [ ] Persistent conversation history
+- [ ] History search
+- [ ] Conversation detail view
+- [ ] Delete/clear history controls
+- [ ] Separate project and conversation storage
 
-### Database
+## Frontend
 
-- [ ] PostgreSQL integration
-- [ ] Store project metadata
-- [ ] Store workflow history
-- [ ] Store generated project information
+- [ ] More complete React dashboard
+- [ ] Improved real-time agent visualization
+- [ ] Generated-file editor/viewer improvements
+- [ ] Project management controls
+- [ ] Settings page
 
-### Project Export
+## Database
 
-- [ ] ZIP download
-- [ ] Project export
-- [ ] Generated-project management
+- [ ] PostgreSQL integration for production
+- [ ] Project metadata storage in production DB
+- [ ] Workflow history storage
+- [ ] Conversation history storage
 
-### Developer Tools
+## Project Export
+
+- [x] ZIP download
+- [ ] Additional project export formats
+- [ ] Project import
+
+## Developer Tools
 
 - [ ] Git integration
 - [ ] GitHub integration
 - [ ] Automatic repository creation
 - [ ] Commit generation
+- [ ] Pull request generation
 
-### AI Infrastructure
+## AI Infrastructure
 
 - [ ] Provider health tracking
 - [ ] Provider cooldown after quota failures
 - [ ] Improved model selection
 - [ ] Better agent memory
 - [ ] More advanced debugging
+- [ ] Better intent classification
 
-### Security
+## Security
 
 - [ ] Stronger code-execution sandbox
-- [ ] Resource limits
+- [ ] CPU and memory resource limits
 - [ ] Restricted subprocess environment
 - [ ] More robust generated-code isolation
+- [ ] Production authentication/authorization
 
 ---
 
-## Project Vision
-
-The long-term goal of DevTeam AI is to create an autonomous software engineering environment where a user can provide a software idea and an AI development team can collaboratively transform that idea into a working software project.
-
-The system is designed around the concept of specialized AI agents working together rather than a single general-purpose coding agent.
-
-```text
-Idea
- ↓
-Requirements
- ↓
-Architecture
- ↓
-Implementation
- ↓
-Files
- ↓
-Testing
- ↓
-Debugging
- ↓
-Code Review
- ↓
-Documentation
- ↓
-Software Project
-```
-
----
-
-## Author
+# Author
 
 **Omm Prakash Parida**
 
 GitHub:
 
-```text
 https://github.com/OmmPrakash-07
-```
 
 Project Repository:
 
-```text
 https://github.com/OmmPrakash-07/DevTeam-AI
-```
 
 ---
 
-## License
+# License
 
-This project is currently under development.
+This project is currently under active development.
