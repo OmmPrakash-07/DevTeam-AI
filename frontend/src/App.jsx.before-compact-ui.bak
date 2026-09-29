@@ -1023,6 +1023,19 @@ function ModelSelector({ selectedModel, onSelectModel }) {
   const [modelError, setModelError] = useState("");
 
   useEffect(() => {
+    try {
+      if (selectedModel) {
+        window.localStorage.setItem(
+          "devteam-selected-model",
+          JSON.stringify(selectedModel)
+        );
+      }
+    } catch {
+      // localStorage unavailable; continue without persistence.
+    }
+  }, [selectedModel]);
+
+  useEffect(() => {
     let active = true;
 
     const loadModels = async () => {
@@ -1033,24 +1046,22 @@ function ModelSelector({ selectedModel, onSelectModel }) {
         const response = await fetch(apiEndpoint("/models"));
 
         if (!response.ok) {
-          throw new Error(`Models could not be loaded (${response.status})`);
+          throw new Error(`Model API returned ${response.status}`);
         }
 
         const data = await response.json();
 
-        if (active) {
-          setProviders(
-            Array.isArray(data.providers) ? data.providers : []
-          );
-        }
+        if (!active) return;
+
+        setProviders(Array.isArray(data.providers) ? data.providers : []);
       } catch (error) {
-        if (active) {
-          setModelError(
-            error instanceof Error
-              ? error.message
-              : "Models could not be loaded."
-          );
-        }
+        if (!active) return;
+
+        setModelError(
+          error instanceof Error
+            ? error.message
+            : "Unable to load available models."
+        );
       } finally {
         if (active) {
           setLoadingModels(false);
@@ -1065,27 +1076,46 @@ function ModelSelector({ selectedModel, onSelectModel }) {
     };
   }, []);
 
+  useEffect(() => {
+    if (!selectedModel && providers.length > 0) {
+      const firstModel = providers
+        .flatMap((provider) =>
+          Array.isArray(provider.models)
+            ? provider.models.map((model) => ({
+                providerId: provider.id,
+                modelId: model.id,
+                name: model.name,
+              }))
+            : []
+        )[0];
+
+      if (firstModel) {
+        onSelectModel(firstModel);
+      }
+    }
+  }, [providers, selectedModel, onSelectModel]);
+
   const selectedLabel =
     selectedModel?.name ||
     selectedModel?.modelId ||
     "Select Model";
 
   return (
-    <div className="relative w-64">
+    <div className="relative">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        className="flex w-full items-center justify-between gap-3 rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2.5 text-left transition hover:border-blue-400/30 hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/30"
+        className="flex w-full items-center justify-between gap-3 rounded-xl border border-white/10 bg-slate-950/70 px-4 py-3 text-left transition hover:border-blue-400/30 hover:bg-white/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/30"
       >
         <div className="min-w-0">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-            Model
-          </div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+            Primary Model
+          </p>
 
-          <div className="mt-0.5 truncate text-xs font-medium text-slate-200">
+          <p className="mt-1 truncate text-sm font-medium text-slate-200">
             {selectedLabel}
-          </div>
+          </p>
         </div>
 
         <svg
@@ -1097,7 +1127,7 @@ function ModelSelector({ selectedModel, onSelectModel }) {
           aria-hidden="true"
         >
           <path
-            d="m5 7.5 5 5 5-5"
+            d="M5 7.5 10 12.5 15 7.5"
             stroke="currentColor"
             strokeWidth="1.7"
             strokeLinecap="round"
@@ -1107,62 +1137,91 @@ function ModelSelector({ selectedModel, onSelectModel }) {
       </button>
 
       {open && (
-        <div className="absolute bottom-full left-0 z-50 mb-2 max-h-72 w-72 overflow-y-auto rounded-xl border border-white/10 bg-slate-950 p-2 shadow-2xl shadow-black/40">
+        <div className="absolute bottom-full left-0 z-[70] mb-2 max-h-[28rem] w-full overflow-y-auto rounded-2xl border border-white/10 bg-slate-950/98 p-2 shadow-2xl shadow-black/40 backdrop-blur-xl">
           {loadingModels && (
-            <div className="px-3 py-3 text-xs text-slate-500">
+            <div className="px-3 py-4 text-sm text-slate-500">
               Loading models...
             </div>
           )}
 
           {modelError && !loadingModels && (
-            <div className="rounded-lg border border-red-400/20 bg-red-400/10 px-3 py-2.5 text-xs text-red-300">
+            <div className="rounded-xl border border-red-400/20 bg-red-400/10 px-3 py-3 text-xs leading-5 text-red-300">
               {modelError}
             </div>
           )}
 
           {!loadingModels &&
             !modelError &&
+            providers.length === 0 && (
+              <div className="px-3 py-4 text-sm text-slate-500">
+                No models available.
+              </div>
+            )}
+
+          {!loadingModels &&
+            !modelError &&
             providers.map((provider) => (
               <div key={provider.id} className="mb-2 last:mb-0">
-                <div className="px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                <div className="px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
                   {provider.name}
                 </div>
 
-                {(provider.models || []).map((model) => {
-                  const selected =
-                    selectedModel?.providerId === provider.id &&
-                    selectedModel?.modelId === model.id;
+                <div className="space-y-1">
+                  {(provider.models || []).map((model) => {
+                    const isSelected =
+                      selectedModel?.providerId === provider.id &&
+                      selectedModel?.modelId === model.id;
 
-                  return (
-                    <button
-                      key={`${provider.id}-${model.id}`}
-                      type="button"
-                      onClick={() => {
-                        onSelectModel({
-                          providerId: provider.id,
-                          modelId: model.id,
-                          name: model.name || model.id,
-                        });
-                        setOpen(false);
-                      }}
-                      className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-xs transition ${
-                        selected
-                          ? "bg-blue-400/10 text-blue-200"
-                          : "text-slate-300 hover:bg-white/[0.05] hover:text-white"
-                      }`}
-                    >
-                      <span className="truncate">
-                        {model.name || model.id}
-                      </span>
+                    return (
+                      <button
+                        key={`${provider.id}:${model.id}`}
+                        type="button"
+                        onClick={() => {
+                          onSelectModel({
+                            providerId: provider.id,
+                            modelId: model.id,
+                            name: model.name,
+                          });
+                          setOpen(false);
+                        }}
+                        className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left transition ${
+                          isSelected
+                            ? "bg-blue-400/10 text-blue-200"
+                            : "text-slate-300 hover:bg-white/[0.05] hover:text-white"
+                        }`}
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-medium">
+                            {model.name || model.id}
+                          </span>
 
-                      {selected && (
-                        <span className="ml-2 shrink-0 text-blue-300">
-                          ✓
+                          {model.name && model.id !== model.name && (
+                            <span className="mt-0.5 block truncate text-[11px] text-slate-600">
+                              {model.id}
+                            </span>
+                          )}
                         </span>
-                      )}
-                    </button>
-                  );
-                })}
+
+                        {isSelected && (
+                          <svg
+                            className="ml-3 h-4 w-4 shrink-0 text-blue-300"
+                            viewBox="0 0 20 20"
+                            fill="none"
+                            aria-hidden="true"
+                          >
+                            <path
+                              d="m5 10 3 3 7-7"
+                              stroke="currentColor"
+                              strokeWidth="1.8"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             ))}
         </div>
@@ -1170,6 +1229,7 @@ function ModelSelector({ selectedModel, onSelectModel }) {
     </div>
   );
 }
+
 
 function App() {
 
@@ -1180,13 +1240,9 @@ function App() {
   const [currentView, setCurrentView] = useState("home");
 
   const [settingsMessage, setSettingsMessage] = useState("");
-
   const [selectedModel, setSelectedModel] = useState(() => {
     try {
-      const saved = window.localStorage.getItem(
-        "devteam-selected-model"
-      );
-
+      const saved = window.localStorage.getItem("devteam-selected-model");
       return saved ? JSON.parse(saved) : null;
     } catch {
       return null;
@@ -1236,19 +1292,6 @@ function App() {
   const [historyDetailError, setHistoryDetailError] = useState("");
 
   const [historyDeleteLoading, setHistoryDeleteLoading] = useState(false);
-  useEffect(() => {
-    try {
-      if (selectedModel) {
-        window.localStorage.setItem(
-          "devteam-selected-model",
-          JSON.stringify(selectedModel)
-        );
-      }
-    } catch {
-      // Continue without persistence if localStorage is unavailable.
-    }
-  }, [selectedModel]);
-
 
 
 
@@ -2240,7 +2283,7 @@ function App() {
 
       <main
 
-        className={`mx-auto max-w-7xl px-4 py-8 transition-[margin] duration-300 ease-in-out sm:px-6 sm:py-10 lg:px-8 ${
+        className={`mx-auto max-w-7xl px-4 pb-48 pt-8 transition-[margin] duration-300 ease-in-out sm:px-6 sm:py-10 lg:px-8 ${
 
           sidebarOpen ? "lg:ml-80" : ""
 
@@ -2302,7 +2345,7 @@ function App() {
 
               ref={requestSectionRef}
 
-              className="mx-auto mt-10 max-w-4xl scroll-mt-24"
+              className="fixed bottom-4 left-4 right-4 z-50 scroll-mt-24 lg:left-6 lg:right-auto lg:w-[min(48rem,calc(100vw-3rem))]"
 
             >
 
@@ -2342,7 +2385,7 @@ function App() {
 
 
 
-                <div className="mb-4 flex items-center">
+                <div className="mb-4">
                   <ModelSelector
                     selectedModel={selectedModel}
                     onSelectModel={setSelectedModel}
