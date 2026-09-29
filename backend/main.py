@@ -20,15 +20,21 @@ from services.intent import (
     classify_intent,
     generate_assistant_response,
 )
-from services.project_repository import project_repository, utc_timestamp
+from services.llm import (
+    reset_selected_model,
+    set_selected_model,
+)
 from services.model_manager import get_available_models
+from services.project_repository import (
+    project_repository,
+    utc_timestamp,
+)
 from tools.filesystem import get_project_dir
 
 
 # --------------------------------------------------
 # Application Lifespan
 # --------------------------------------------------
-
 
 @asynccontextmanager
 async def app_lifespan(_app):
@@ -39,7 +45,6 @@ async def app_lifespan(_app):
 # --------------------------------------------------
 # FastAPI Application
 # --------------------------------------------------
-
 
 app = FastAPI(
     title="DevTeam AI",
@@ -52,7 +57,6 @@ app = FastAPI(
 # --------------------------------------------------
 # CORS Configuration
 # --------------------------------------------------
-
 
 app.add_middleware(
     CORSMiddleware,
@@ -73,7 +77,6 @@ app.add_middleware(
 # Workflow
 # --------------------------------------------------
 
-
 workflow = create_workflow()
 
 
@@ -81,16 +84,50 @@ workflow = create_workflow()
 # Model Catalogue
 # --------------------------------------------------
 
-
 @app.get("/models")
 def list_models():
     """
-    Return all configured AI providers and their available models.
-
-    This endpoint is used by the frontend model selector.
+    Return all configured AI providers and their
+    available models in the format expected by
+    the frontend model selector.
     """
+    available_models = get_available_models()
+
+    providers = []
+
+    for provider_name, provider_data in available_models.items():
+        if not provider_data.get("enabled", False):
+            continue
+
+        models = []
+
+        for model in provider_data.get("models", []):
+            models.append(
+                {
+                    "id": model.get("id"),
+                    "name": model.get("name"),
+                    "provider": model.get(
+                        "provider",
+                        provider_name,
+                    ),
+                    **(
+                        {"local": True}
+                        if model.get("local") is True
+                        else {}
+                    ),
+                }
+            )
+
+        providers.append(
+            {
+                "id": provider_name.lower(),
+                "name": provider_name,
+                "models": models,
+            }
+        )
+
     return {
-        "providers": get_available_models()
+        "providers": providers,
     }
 
 
@@ -98,26 +135,56 @@ def list_models():
 # Response Helpers
 # --------------------------------------------------
 
-
 def build_generate_response(result: dict) -> dict:
-    """Build the response shared by the regular and streaming endpoints."""
-
+    """
+    Build the response shared by the regular
+    and streaming endpoints.
+    """
     return {
         "project_id": result.get("project_id"),
         "user_request": result.get("user_request"),
-        "requirements": result.get("requirements", []),
-        "architecture": result.get("architecture", {}),
-        "generated_files": result.get("generated_files", []),
-        "tasks": result.get("tasks", []),
-        "test_results": result.get("test_results", {}),
-        "review": result.get("review", {}),
-        "debug_attempts": result.get("debug_attempts", 0),
-        "activity_history": result.get("activity_history", []),
-        "current_active_agent": result.get("current_active_agent"),
+        "requirements": result.get(
+            "requirements",
+            [],
+        ),
+        "architecture": result.get(
+            "architecture",
+            {},
+        ),
+        "generated_files": result.get(
+            "generated_files",
+            [],
+        ),
+        "tasks": result.get(
+            "tasks",
+            [],
+        ),
+        "test_results": result.get(
+            "test_results",
+            {},
+        ),
+        "review": result.get(
+            "review",
+            {},
+        ),
+        "debug_attempts": result.get(
+            "debug_attempts",
+            0,
+        ),
+        "activity_history": result.get(
+            "activity_history",
+            [],
+        ),
+        "current_active_agent": result.get(
+            "current_active_agent"
+        ),
     }
 
 
-def format_sse_event(event_name: str, data: dict) -> str:
+def format_sse_event(
+    event_name: str,
+    data: dict,
+) -> str:
     encoded_data = json.dumps(
         data,
         ensure_ascii=False,
@@ -133,15 +200,16 @@ def format_sse_event(event_name: str, data: dict) -> str:
 # History Persistence
 # --------------------------------------------------
 
-
 _HISTORY_ID_PATTERN = re.compile(
     r"history_[A-Za-z0-9_-]+\Z"
 )
 
 
 def create_history_id() -> str:
-    """Create a unique identifier for an assistant conversation."""
-
+    """
+    Create a unique identifier for an
+    assistant conversation.
+    """
     return (
         f"history_"
         f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_"
@@ -160,7 +228,6 @@ def persist_history_entry(
     These entries are intentionally stored separately
     from generated software projects.
     """
-
     history_id = create_history_id()
     created_at = utc_timestamp()
 
@@ -172,15 +239,23 @@ def persist_history_entry(
         "created_at": created_at,
     }
 
-    project_repository.save_history(history)
+    project_repository.save_history(
+        history
+    )
 
     return history
 
 
-def resolve_history_id(history_id: str) -> str:
-    """Validate a history ID before querying the repository."""
-
-    if not _HISTORY_ID_PATTERN.fullmatch(history_id):
+def resolve_history_id(
+    history_id: str,
+) -> str:
+    """
+    Validate a history ID before querying
+    the repository.
+    """
+    if not _HISTORY_ID_PATTERN.fullmatch(
+        history_id
+    ):
         raise HTTPException(
             status_code=400,
             detail="Invalid history ID.",
@@ -193,25 +268,35 @@ def resolve_history_id(history_id: str) -> str:
 # Project Persistence
 # --------------------------------------------------
 
-
 def persist_completed_project(
     result: dict,
     created_at: str,
 ) -> dict:
-    project_id = result.get("project_id")
-    user_request = result.get("user_request")
+    project_id = result.get(
+        "project_id"
+    )
+
+    user_request = result.get(
+        "user_request"
+    )
 
     project_dir = get_project_dir(
         project_id,
         create=False,
     )
 
-    if not project_dir.is_dir() or not user_request:
+    if (
+        not project_dir.is_dir()
+        or not user_request
+    ):
         raise ValueError(
             "Completed project data is unavailable."
         )
 
-    test_results = result.get("test_results") or {}
+    test_results = (
+        result.get("test_results")
+        or {}
+    )
 
     metadata = {
         "project_id": project_id,
@@ -219,13 +304,21 @@ def persist_completed_project(
         "created_at": created_at,
         "updated_at": utc_timestamp(),
         "status": "completed",
-        "test_status": test_results.get("status"),
+        "test_status": test_results.get(
+            "status"
+        ),
         "file_count": len(
-            list(iter_project_files(project_dir))
+            list(
+                iter_project_files(
+                    project_dir
+                )
+            )
         ),
     }
 
-    project_repository.save_project(metadata)
+    project_repository.save_project(
+        metadata
+    )
 
     return metadata
 
@@ -233,7 +326,6 @@ def persist_completed_project(
 # --------------------------------------------------
 # Project Validation
 # --------------------------------------------------
-
 
 _PROJECT_ID_PATTERN = re.compile(
     r"project_[A-Za-z0-9_-]+\Z"
@@ -243,7 +335,9 @@ _PROJECT_ID_PATTERN = re.compile(
 def resolve_existing_project_dir(
     project_id: str,
 ) -> Path:
-    if not _PROJECT_ID_PATTERN.fullmatch(project_id):
+    if not _PROJECT_ID_PATTERN.fullmatch(
+        project_id
+    ):
         raise HTTPException(
             status_code=400,
             detail="Invalid project ID.",
@@ -269,12 +363,13 @@ def resolve_existing_project_dir(
     return project_dir
 
 
-def iter_project_files(project_dir: Path):
+def iter_project_files(
+    project_dir: Path,
+):
     """
-    Yield resolved regular files that remain inside
-    the project directory.
+    Yield resolved regular files that remain
+    inside the project directory.
     """
-
     root = project_dir.resolve(
         strict=True
     )
@@ -282,12 +377,18 @@ def iter_project_files(project_dir: Path):
     def raise_walk_error(error):
         raise error
 
-    for current_dir, directory_names, file_names in os.walk(
+    for (
+        current_dir,
+        directory_names,
+        file_names,
+    ) in os.walk(
         root,
         onerror=raise_walk_error,
         followlinks=False,
     ):
-        current_path = Path(current_dir)
+        current_path = Path(
+            current_dir
+        )
 
         directory_names[:] = sorted(
             name
@@ -297,7 +398,9 @@ def iter_project_files(project_dir: Path):
             ).is_symlink()
         )
 
-        for file_name in sorted(file_names):
+        for file_name in sorted(
+            file_names
+        ):
             candidate = (
                 current_path / file_name
             )
@@ -311,7 +414,9 @@ def iter_project_files(project_dir: Path):
 
             try:
                 relative_path = (
-                    resolved_file.relative_to(root)
+                    resolved_file.relative_to(
+                        root
+                    )
                 )
             except ValueError:
                 continue
@@ -327,7 +432,6 @@ def iter_project_files(project_dir: Path):
 # Root Endpoint
 # --------------------------------------------------
 
-
 @app.get("/")
 def root():
     return {
@@ -339,13 +443,34 @@ def root():
 # Generate
 # --------------------------------------------------
 
-
 @app.post("/generate")
-def generate_project(request: dict):
+def generate_project(
+    request: dict,
+):
     user_request = request.get(
         "request",
         "",
     ).strip()
+
+    selected_provider = request.get(
+        "provider"
+    )
+
+    selected_model = request.get(
+        "model"
+    )
+
+    if selected_provider:
+        selected_provider = (
+            str(selected_provider).strip()
+            or None
+        )
+
+    if selected_model:
+        selected_model = (
+            str(selected_model).strip()
+            or None
+        )
 
     if not user_request:
         raise HTTPException(
@@ -378,28 +503,42 @@ def generate_project(request: dict):
         "ANSWER",
         "CODING_HELP",
     }:
-        try:
-            answer = generate_assistant_response(
-                user_request,
-                intent,
+        model_context_tokens = (
+            set_selected_model(
+                selected_provider,
+                selected_model,
             )
-        except Exception:
-            raise HTTPException(
-                status_code=503,
-                detail=(
-                    "Unable to answer this request "
-                    "right now."
-                ),
-            ) from None
+        )
 
-        # IMPORTANT:
-        # Normal questions and coding-help requests
-        # are saved ONLY in History.
+        try:
+            try:
+                answer = (
+                    generate_assistant_response(
+                        user_request,
+                        intent,
+                    )
+                )
+            except Exception:
+                raise HTTPException(
+                    status_code=503,
+                    detail=(
+                        "Unable to answer this request "
+                        "right now."
+                    ),
+                ) from None
+        finally:
+            reset_selected_model(
+                model_context_tokens
+            )
+
+        # --------------------------------------------------
+        # Save normal conversations ONLY in History.
         #
         # They do NOT create:
         # - project IDs
         # - project folders
         # - project records
+        # --------------------------------------------------
 
         try:
             history = persist_history_entry(
@@ -453,6 +592,8 @@ def generate_project(request: dict):
     initial_state = {
         "project_id": project_id,
         "user_request": user_request,
+        "selected_provider": selected_provider,
+        "selected_model": selected_model,
         "debug_attempts": 0,
         "errors": [],
     }
@@ -461,9 +602,21 @@ def generate_project(request: dict):
     # Run Multi-Agent Workflow
     # --------------------------------------------------
 
-    result = workflow.invoke(
-        initial_state
+    model_context_tokens = (
+        set_selected_model(
+            selected_provider,
+            selected_model,
+        )
     )
+
+    try:
+        result = workflow.invoke(
+            initial_state
+        )
+    finally:
+        reset_selected_model(
+            model_context_tokens
+        )
 
     # --------------------------------------------------
     # Persist Completed Project
@@ -477,7 +630,9 @@ def generate_project(request: dict):
     except Exception:
         raise HTTPException(
             status_code=500,
-            detail="Unable to save project history.",
+            detail=(
+                "Unable to save project history."
+            ),
         ) from None
 
     # --------------------------------------------------
@@ -496,12 +651,25 @@ def generate_project(request: dict):
 # Generate Stream
 # --------------------------------------------------
 
-
 @app.get("/generate/stream")
 async def generate_project_stream(
     request: str = Query(...),
+    provider: str | None = Query(None),
+    model: str | None = Query(None),
 ):
     user_request = request.strip()
+
+    selected_provider = (
+        provider.strip()
+        if provider
+        else None
+    )
+
+    selected_model = (
+        model.strip()
+        if model
+        else None
+    )
 
     if not user_request:
         raise HTTPException(
@@ -511,11 +679,8 @@ async def generate_project_stream(
 
     async def event_stream():
         loop = asyncio.get_running_loop()
-
         events = asyncio.Queue()
-
         disconnected = threading.Event()
-
         end_of_stream = object()
 
         def publish(item):
@@ -531,7 +696,33 @@ async def generate_project_stream(
                 disconnected.set()
 
         def run_workflow_stream():
+            model_context_tokens = None
+
             try:
+                # --------------------------------------------------
+                # Set selected model inside the worker thread.
+                #
+                # This is important because all workflow agents
+                # call invoke_llm() from this thread.
+                # --------------------------------------------------
+
+                model_context_tokens = (
+                    set_selected_model(
+                        selected_provider,
+                        selected_model,
+                    )
+                )
+
+                if (
+                    selected_provider
+                    and selected_model
+                ):
+                    print(
+                        "\n🎯 Request model:"
+                        f" {selected_provider}"
+                        f" / {selected_model}"
+                    )
+
                 # --------------------------------------------------
                 # Intent Classification
                 # --------------------------------------------------
@@ -595,14 +786,17 @@ async def generate_project_stream(
                         )
                         return
 
-                    # Save normal conversations
-                    # ONLY in History.
+                    # --------------------------------------------------
+                    # Save normal conversations ONLY in History.
+                    # --------------------------------------------------
 
                     try:
-                        history = persist_history_entry(
-                            user_request=user_request,
-                            intent=intent,
-                            answer=answer,
+                        history = (
+                            persist_history_entry(
+                                user_request=user_request,
+                                intent=intent,
+                                answer=answer,
+                            )
                         )
                     except Exception:
                         publish(
@@ -671,6 +865,8 @@ async def generate_project_stream(
                 initial_state = {
                     "project_id": project_id,
                     "user_request": user_request,
+                    "selected_provider": selected_provider,
+                    "selected_model": selected_model,
                     "debug_attempts": 0,
                     "errors": [],
                 }
@@ -681,7 +877,10 @@ async def generate_project_stream(
                 # Stream Workflow
                 # --------------------------------------------------
 
-                for mode, chunk in workflow.stream(
+                for (
+                    mode,
+                    chunk,
+                ) in workflow.stream(
                     initial_state,
                     stream_mode=[
                         "custom",
@@ -729,7 +928,12 @@ async def generate_project_stream(
                         )
                     )
 
-            except Exception:
+            except Exception as error:
+                print(
+                    "\n❌ Generation error:"
+                )
+                print(error)
+
                 publish(
                     (
                         "error",
@@ -743,6 +947,15 @@ async def generate_project_stream(
                 )
 
             finally:
+                # --------------------------------------------------
+                # Always restore the previous model context.
+                # --------------------------------------------------
+
+                if model_context_tokens is not None:
+                    reset_selected_model(
+                        model_context_tokens
+                    )
+
                 publish(
                     end_of_stream
                 )
@@ -792,7 +1005,6 @@ async def generate_project_stream(
 # History
 # --------------------------------------------------
 
-
 @app.get("/history")
 def list_history():
     """
@@ -800,7 +1012,6 @@ def list_history():
 
     Generated software projects are intentionally excluded.
     """
-
     try:
         return {
             "history": (
@@ -820,8 +1031,9 @@ def list_history():
 def get_history(
     history_id: str,
 ):
-    """Return a single saved conversation."""
-
+    """
+    Return a single saved conversation.
+    """
     history_id = resolve_history_id(
         history_id
     )
@@ -853,8 +1065,9 @@ def get_history(
 def delete_history(
     history_id: str,
 ):
-    """Delete a single saved conversation."""
-
+    """
+    Delete a single saved conversation.
+    """
     history_id = resolve_history_id(
         history_id
     )
@@ -892,7 +1105,6 @@ def delete_history(
 # Projects
 # --------------------------------------------------
 
-
 @app.get("/projects")
 def list_projects():
     try:
@@ -912,7 +1124,6 @@ def list_projects():
 # Project Files
 # --------------------------------------------------
 
-
 @app.get("/projects/{project_id}")
 def get_project_files(
     project_id: str,
@@ -924,10 +1135,15 @@ def get_project_files(
     try:
         files = []
 
-        for file_path, relative_path in iter_project_files(
+        for (
+            file_path,
+            relative_path,
+        ) in iter_project_files(
             project_dir
         ):
-            content_bytes = file_path.read_bytes()
+            content_bytes = (
+                file_path.read_bytes()
+            )
 
             is_binary = (
                 b"\x00" in content_bytes
@@ -935,11 +1151,12 @@ def get_project_files(
 
             if is_binary:
                 content = None
-
             else:
                 try:
-                    content = content_bytes.decode(
-                        "utf-8"
+                    content = (
+                        content_bytes.decode(
+                            "utf-8"
+                        )
                     )
                 except UnicodeDecodeError:
                     content = None
@@ -969,7 +1186,6 @@ def get_project_files(
 # Project Download
 # --------------------------------------------------
 
-
 @app.get(
     "/projects/{project_id}/download"
 )
@@ -989,7 +1205,10 @@ def download_project(
             compression=zipfile.ZIP_DEFLATED,
         ) as archive:
 
-            for file_path, relative_path in iter_project_files(
+            for (
+                file_path,
+                relative_path,
+            ) in iter_project_files(
                 project_dir
             ):
                 archive.write(

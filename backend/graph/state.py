@@ -17,6 +17,10 @@ class ProjectState(TypedDict, total=False):
 
     requirements: List[str]
 
+    selected_provider: Optional[str]
+
+    selected_model: Optional[str]
+
     architecture: Dict[str, Any]
 
     tasks: List[Dict[str, Any]]

@@ -1,6 +1,7 @@
 import os
 import re
 import time
+from contextvars import ContextVar
 from typing import Any, Callable, Dict
 
 from dotenv import load_dotenv
@@ -8,7 +9,6 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import AIMessage
 from openai import OpenAI
 import anthropic
-
 
 load_dotenv()
 
@@ -19,17 +19,96 @@ load_dotenv()
 
 DEFAULT_MAX_TOKENS = 4000
 
-# Local Ollama
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gpt-oss:20b")
-OLLAMA_BASE_URL = os.getenv(
-    "OLLAMA_BASE_URL",
-    "[http://localhost:11434](http://localhost:11434)",
+
+# ============================================================
+# Selected model context
+# ============================================================
+
+_SELECTED_PROVIDER: ContextVar[str | None] = ContextVar(
+    "selected_provider",
+    default=None,
 )
 
-# Gemini daily quota cooldown
-DAILY_QUOTA_COOLDOWN_SECONDS = 3600
+_SELECTED_MODEL: ContextVar[str | None] = ContextVar(
+    "selected_model",
+    default=None,
+)
 
-# Normal temporary provider failure
+
+def set_selected_model(
+    provider: str | None,
+    model: str | None,
+):
+    """
+    Set the provider/model selected for the current request.
+
+    ContextVar keeps the selection isolated per request.
+    """
+    provider_token = _SELECTED_PROVIDER.set(provider)
+    model_token = _SELECTED_MODEL.set(model)
+
+    return provider_token, model_token
+
+
+def reset_selected_model(tokens) -> None:
+    """
+    Restore the previous provider/model context.
+    """
+    provider_token, model_token = tokens
+
+    _SELECTED_PROVIDER.reset(provider_token)
+    _SELECTED_MODEL.reset(model_token)
+
+
+def get_selected_provider() -> str | None:
+    return _SELECTED_PROVIDER.get()
+
+
+def get_selected_model() -> str | None:
+    return _SELECTED_MODEL.get()
+
+
+def _model_for_provider(
+    provider_name: str,
+    default_model: str,
+) -> str:
+    """
+    Return the selected model when it belongs to the selected
+    provider. Otherwise return the provider's existing default model.
+    """
+    selected_provider = _SELECTED_PROVIDER.get()
+    selected_model = _SELECTED_MODEL.get()
+
+    if (
+        selected_provider
+        and selected_model
+        and selected_provider.lower() == provider_name.lower()
+    ):
+        return selected_model
+
+    return default_model
+
+
+# ============================================================
+# Local Ollama
+# ============================================================
+
+OLLAMA_MODEL = os.getenv(
+    "OLLAMA_MODEL",
+    "gpt-oss:20b",
+)
+
+OLLAMA_BASE_URL = os.getenv(
+    "OLLAMA_BASE_URL",
+    "http://localhost:11434",
+)
+
+
+# ============================================================
+# Provider cooldown configuration
+# ============================================================
+
+DAILY_QUOTA_COOLDOWN_SECONDS = 3600
 DEFAULT_COOLDOWN_SECONDS = 60
 
 
@@ -57,10 +136,15 @@ def is_daily_quota_failure(error_text: str) -> bool:
         "requests per day",
     ]
 
-    return any(pattern in text for pattern in daily_quota_patterns)
+    return any(
+        pattern in text
+        for pattern in daily_quota_patterns
+    )
 
 
-def is_temporary_provider_failure(error_text: str) -> bool:
+def is_temporary_provider_failure(
+    error_text: str,
+) -> bool:
     text = str(error_text).lower()
 
     temporary_patterns = [
@@ -82,7 +166,10 @@ def is_temporary_provider_failure(error_text: str) -> bool:
         "timed out",
     ]
 
-    return any(pattern in text for pattern in temporary_patterns)
+    return any(
+        pattern in text
+        for pattern in temporary_patterns
+    )
 
 
 def get_retry_delay(error_text: str) -> int:
@@ -98,12 +185,21 @@ def get_retry_delay(error_text: str) -> int:
     ]
 
     for pattern in patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
+        match = re.search(
+            pattern,
+            text,
+            re.IGNORECASE,
+        )
 
         if match:
             try:
                 seconds = int(match.group(1))
-                return max(30, min(seconds + 5, 300))
+
+                return max(
+                    30,
+                    min(seconds + 5, 300),
+                )
+
             except ValueError:
                 pass
 
@@ -126,37 +222,63 @@ def set_provider_cooldown(
     )
 
 
-def get_remaining_cooldown(provider_name: str) -> int:
-    cooldown_until = _provider_cooldowns.get(provider_name)
+def get_remaining_cooldown(
+    provider_name: str,
+) -> int:
+    cooldown_until = _provider_cooldowns.get(
+        provider_name
+    )
 
     if cooldown_until is None:
         return 0
 
-    remaining = cooldown_until - time.monotonic()
+    remaining = (
+        cooldown_until
+        - time.monotonic()
+    )
 
     if remaining <= 0:
-        _provider_cooldowns.pop(provider_name, None)
+        _provider_cooldowns.pop(
+            provider_name,
+            None,
+        )
+
         return 0
 
-    return max(1, int(remaining))
+    return max(
+        1,
+        int(remaining),
+    )
 
 
-def is_provider_in_cooldown(provider_name: str) -> bool:
-    return get_remaining_cooldown(provider_name) > 0
+def is_provider_in_cooldown(
+    provider_name: str,
+) -> bool:
+    return (
+        get_remaining_cooldown(provider_name)
+        > 0
+    )
 
 
 # ============================================================
 # Provider clients
 # ============================================================
 
-def get_gemini(max_tokens=DEFAULT_MAX_TOKENS):
+def get_gemini(
+    max_tokens=DEFAULT_MAX_TOKENS,
+):
     api_key = os.getenv("GEMINI_API_KEY")
 
     if not api_key:
         return None
 
+    model = _model_for_provider(
+        "Gemini",
+        "gemini-3.6-flash",
+    )
+
     return ChatGoogleGenerativeAI(
-        model="gemini-3.6-flash",
+        model=model,
         google_api_key=api_key,
         max_output_tokens=max_tokens,
     )
@@ -193,7 +315,7 @@ def get_claude():
         return None
 
     return anthropic.Anthropic(
-        api_key=api_key
+        api_key=api_key,
     )
 
 
@@ -213,7 +335,9 @@ def get_openrouter():
 # Response extraction
 # ============================================================
 
-def _extract_content_value(content: Any) -> str:
+def _extract_content_value(
+    content: Any,
+) -> str:
     if content is None:
         return ""
 
@@ -238,7 +362,11 @@ def _extract_content_value(content: Any) -> str:
                     parts.append(str(text))
 
             else:
-                text = getattr(item, "text", None)
+                text = getattr(
+                    item,
+                    "text",
+                    None,
+                )
 
                 if text:
                     parts.append(str(text))
@@ -258,7 +386,9 @@ def _extract_content_value(content: Any) -> str:
     return str(content).strip()
 
 
-def extract_gemini_response(response) -> str:
+def extract_gemini_response(
+    response,
+) -> str:
     try:
         content = getattr(
             response,
@@ -266,7 +396,9 @@ def extract_gemini_response(response) -> str:
             None,
         )
 
-        result = _extract_content_value(content)
+        result = _extract_content_value(
+            content
+        )
 
         if not result:
             raise RuntimeError(
@@ -281,7 +413,9 @@ def extract_gemini_response(response) -> str:
         ) from error
 
 
-def extract_openai_response(response) -> str:
+def extract_openai_response(
+    response,
+) -> str:
     try:
         choices = getattr(
             response,
@@ -313,7 +447,9 @@ def extract_openai_response(response) -> str:
             None,
         )
 
-        result = _extract_content_value(content)
+        result = _extract_content_value(
+            content
+        )
 
         if not result:
             reasoning = getattr(
@@ -340,7 +476,9 @@ def extract_openai_response(response) -> str:
         ) from error
 
 
-def extract_deepseek_response(response) -> str:
+def extract_deepseek_response(
+    response,
+) -> str:
     try:
         content = getattr(
             response,
@@ -348,7 +486,9 @@ def extract_deepseek_response(response) -> str:
             None,
         )
 
-        result = _extract_content_value(content)
+        result = _extract_content_value(
+            content
+        )
 
         if not result:
             raise RuntimeError(
@@ -363,7 +503,9 @@ def extract_deepseek_response(response) -> str:
         ) from error
 
 
-def extract_claude_response(response) -> str:
+def extract_claude_response(
+    response,
+) -> str:
     try:
         content_blocks = getattr(
             response,
@@ -383,7 +525,10 @@ def extract_claude_response(response) -> str:
                 text = block.text
 
             elif isinstance(block, dict):
-                text = block.get("text", "")
+                text = block.get(
+                    "text",
+                    "",
+                )
 
             else:
                 text = str(block)
@@ -417,11 +562,11 @@ def call_ollama(
     """
     Call local Ollama.
 
-    Default model:
+    Default:
         gpt-oss:20b
 
-    Default API:
-        http://localhost:11434
+    The selected model from the UI is used when
+    provider=Ollama.
     """
 
     try:
@@ -431,12 +576,17 @@ def call_ollama(
             host=OLLAMA_BASE_URL
         )
 
+        model = _model_for_provider(
+            "Ollama",
+            OLLAMA_MODEL,
+        )
+
         print(
-            f"🦙 Ollama model: {OLLAMA_MODEL}"
+            f"🦙 Ollama model: {model}"
         )
 
         response = client.chat(
-            model=OLLAMA_MODEL,
+            model=model,
             messages=[
                 {
                     "role": "user",
@@ -469,7 +619,9 @@ def call_ollama(
             None,
         )
 
-        result = _extract_content_value(content)
+        result = _extract_content_value(
+            content
+        )
 
         if not result:
             raise RuntimeError(
@@ -492,6 +644,15 @@ def call_gemini(
     prompt,
     max_tokens=DEFAULT_MAX_TOKENS,
 ):
+    model = _model_for_provider(
+        "Gemini",
+        "gemini-3.6-flash",
+    )
+
+    print(
+        f"🟢 Gemini model: {model}"
+    )
+
     llm = get_gemini(
         max_tokens=max_tokens
     )
@@ -503,7 +664,9 @@ def call_gemini(
 
     response = llm.invoke(prompt)
 
-    return extract_gemini_response(response)
+    return extract_gemini_response(
+        response
+    )
 
 
 def call_groq(
@@ -517,8 +680,17 @@ def call_groq(
             "GROQ_API_KEY is not configured."
         )
 
+    model = _model_for_provider(
+        "Groq",
+        "openai/gpt-oss-20b",
+    )
+
+    print(
+        f"🟠 Groq model: {model}"
+    )
+
     response = client.chat.completions.create(
-        model="openai/gpt-oss-20b",
+        model=model,
         messages=[
             {
                 "role": "user",
@@ -531,7 +703,9 @@ def call_groq(
         ),
     )
 
-    return extract_openai_response(response)
+    return extract_openai_response(
+        response
+    )
 
 
 def call_deepseek(
@@ -545,13 +719,24 @@ def call_deepseek(
             "DEEPSEEK_API_KEY is not configured."
         )
 
+    model = _model_for_provider(
+        "DeepSeek",
+        "deepseek-flash",
+    )
+
+    print(
+        f"🔵 DeepSeek model: {model}"
+    )
+
     response = client.responses.create(
-        model="deepseek-flash",
+        model=model,
         input=prompt,
         max_output_tokens=max_tokens,
     )
 
-    return extract_deepseek_response(response)
+    return extract_deepseek_response(
+        response
+    )
 
 
 def call_claude(
@@ -565,8 +750,17 @@ def call_claude(
             "ANTHROPIC_API_KEY is not configured."
         )
 
+    model = _model_for_provider(
+        "Claude",
+        "claude-sonnet-5",
+    )
+
+    print(
+        f"🟣 Claude model: {model}"
+    )
+
     response = client.messages.create(
-        model="claude-sonnet-5",
+        model=model,
         max_tokens=max_tokens,
         messages=[
             {
@@ -576,7 +770,9 @@ def call_claude(
         ],
     )
 
-    return extract_claude_response(response)
+    return extract_claude_response(
+        response
+    )
 
 
 def call_openrouter(
@@ -590,8 +786,17 @@ def call_openrouter(
             "OPENROUTER_API_KEY is not configured."
         )
 
+    model = _model_for_provider(
+        "OpenRouter",
+        "anthropic/claude-sonnet-5",
+    )
+
+    print(
+        f"🌐 OpenRouter model: {model}"
+    )
+
     response = client.chat.completions.create(
-        model="anthropic/claude-sonnet-5",
+        model=model,
         messages=[
             {
                 "role": "user",
@@ -601,7 +806,9 @@ def call_openrouter(
         max_tokens=max_tokens,
     )
 
-    return extract_openai_response(response)
+    return extract_openai_response(
+        response
+    )
 
 
 # ============================================================
@@ -615,7 +822,11 @@ def invoke_llm(
     """
     Main LLM router.
 
-    Priority:
+    If a model is selected for the current request,
+    that provider/model is used first.
+
+    If no model is selected, the existing provider
+    priority is preserved:
 
     1. Ollama
     2. Groq
@@ -624,6 +835,20 @@ def invoke_llm(
     5. Claude
     6. OpenRouter
     """
+
+    selected_provider = (
+        _SELECTED_PROVIDER.get()
+    )
+
+    selected_model = (
+        _SELECTED_MODEL.get()
+    )
+
+    if selected_provider and selected_model:
+        print(
+            "\n🎯 Selected model:"
+            f" {selected_provider} / {selected_model}"
+        )
 
     providers: list[
         tuple[str, Callable[[str], str]]
@@ -672,9 +897,48 @@ def invoke_llm(
         ),
     ]
 
+    # --------------------------------------------------------
+    # If the user selected a provider, move that provider
+    # to the front of the existing provider list.
+    # --------------------------------------------------------
+
+    if selected_provider:
+        selected_provider_lower = (
+            selected_provider.lower()
+        )
+
+        selected_entry = None
+        remaining_entries = []
+
+        for provider_name, provider_function in providers:
+            if (
+                provider_name.lower()
+                == selected_provider_lower
+            ):
+                selected_entry = (
+                    provider_name,
+                    provider_function,
+                )
+            else:
+                remaining_entries.append(
+                    (
+                        provider_name,
+                        provider_function,
+                    )
+                )
+
+        if selected_entry is not None:
+            providers = [
+                selected_entry,
+                *remaining_entries,
+            ]
+
     errors = []
 
-    for provider_name, provider_function in providers:
+    for (
+        provider_name,
+        provider_function,
+    ) in providers:
 
         # ----------------------------------------------------
         # Skip provider during cooldown
@@ -689,6 +953,7 @@ def invoke_llm(
                 f"⏭️ Skipping {provider_name} "
                 f"(cooldown: {remaining}s remaining)"
             )
+
             continue
 
         print(
@@ -696,7 +961,9 @@ def invoke_llm(
         )
 
         try:
-            response = provider_function(prompt)
+            response = provider_function(
+                prompt
+            )
 
             if not response:
                 raise RuntimeError(
@@ -722,6 +989,7 @@ def invoke_llm(
             print(
                 f"⚠️ {provider_name} failed:"
             )
+
             print(error_text)
 
             # ------------------------------------------------
