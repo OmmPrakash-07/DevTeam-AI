@@ -1071,7 +1071,7 @@ function ModelSelector({ selectedModel, onSelectModel }) {
     "Select Model";
 
   return (
-    <div className="relative w-64">
+    <div className="relative w-52">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
@@ -2342,13 +2342,6 @@ function App() {
 
 
 
-                <div className="mb-4 flex items-center">
-                  <ModelSelector
-                    selectedModel={selectedModel}
-                    onSelectModel={setSelectedModel}
-                  />
-                </div>
-
                 <textarea
 
                   ref={requestInputRef}
@@ -2384,6 +2377,12 @@ function App() {
                   className="w-full resize-none rounded-xl border border-white/10 bg-slate-950/70 px-4 py-4 text-sm leading-6 text-slate-200 outline-none transition placeholder:text-slate-600 focus:border-blue-400/50 focus:ring-2 focus:ring-blue-400/10 disabled:cursor-not-allowed disabled:opacity-60"
 
                 />
+<div className="mt-3 flex items-center">
+  <ModelSelector
+    selectedModel={selectedModel}
+    onSelectModel={setSelectedModel}
+  />
+</div>
 
 
 
@@ -4255,4 +4254,6 @@ function MiniStat({ label, value }) {
 
 
 export default App;
+
+
 
